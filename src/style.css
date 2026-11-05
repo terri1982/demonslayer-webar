@@ -158,13 +158,16 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: max(24px, env(safe-area-inset-top)) max(28px, env(safe-area-inset-right))
-    max(24px, env(safe-area-inset-bottom)) max(36px, env(safe-area-inset-left));
+  padding: max(calc(var(--metatour-top-inset, 0px) + 12px), max(24px, env(safe-area-inset-top)))
+    max(28px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(36px, env(safe-area-inset-left));
   pointer-events: none;
 }
 
 .welcome-card {
   width: min(430px, 100%);
+  max-height: calc(100dvh - var(--metatour-top-inset, 0px) - 24px);
+  overflow-y: auto;
   background: var(--card);
   border: 1px solid var(--card-border);
   border-radius: 16px;
@@ -358,7 +361,7 @@ h2 {
 
 .hud-top {
   position: absolute;
-  top: max(12px, env(safe-area-inset-top));
+  top: max(calc(var(--metatour-top-inset, 0px) + 6px), max(12px, env(safe-area-inset-top)));
   left: max(14px, env(safe-area-inset-left));
   right: max(14px, env(safe-area-inset-right));
   display: grid;
@@ -546,7 +549,7 @@ h2 {
 
 #danger {
   position: absolute;
-  top: 22%;
+  top: max(22%, calc(var(--metatour-top-inset, 0px) + 124px));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -578,7 +581,7 @@ h2 {
 
 #message {
   position: absolute;
-  top: 15%;
+  top: max(15%, calc(var(--metatour-top-inset, 0px) + 84px));
   left: 50%;
   transform: translateX(-50%);
   font-size: 12.5px;
@@ -780,7 +783,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: max(calc(var(--metatour-top-inset, 0px) + 12px), 20px) 20px 20px;
   background: rgba(8, 18, 29, 0.78);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -832,7 +835,8 @@ h2 {
   #welcome {
     align-items: flex-end;
     justify-content: center;
-    padding: max(12px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom)) 12px;
+    padding: max(calc(var(--metatour-top-inset, 0px) + 8px), max(12px, env(safe-area-inset-top))) 12px
+      max(14px, env(safe-area-inset-bottom)) 12px;
   }
 
   .welcome-card {

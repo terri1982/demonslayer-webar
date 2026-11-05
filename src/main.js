@@ -102,7 +102,13 @@ syncViewportSize();
 window.addEventListener('resize', syncViewportSize);
 
 // Spatial subsystems (all under worldRoot in scene):
-const poseCtrl = createPoseController();
+const poseCtrl = createPoseController({
+  onExternalRecenter() {
+    if (!isGlasses && mode === 'battle') {
+      showMessage('已响应容器「回正」校准正前方视角', 1.6);
+    }
+  },
+});
 const rearCamera = createRearCamera(videoEl, {
   isGlasses,
   onStreamLost(msg) {
@@ -344,6 +350,14 @@ if (isGlasses) {
 
 // Step 5: Handheld & Desktop UI Interactions
 if (!isGlasses) {
+  const syncHandheldContainerHint = () => {
+    if (poseCtrl.stats().containerMode === 'handheld') {
+      $('#pose-hint').textContent = '已接入元游 WebAR 浏览器 60Hz 原生姿态 · 转动手机或拖动即可环视';
+    }
+  };
+  syncHandheldContainerHint();
+  window.setTimeout(syncHandheldContainerHint, 250);
+
   $('#btn-camera-ar').addEventListener('click', async () => {
     audio.unlock();
     $('#btn-camera-ar').disabled = true;
