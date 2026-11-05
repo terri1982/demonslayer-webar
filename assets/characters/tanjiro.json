@@ -1,0 +1,590 @@
+{
+  "character": "tanjiro",
+  "rig": "TanjiroRig",
+  "units": "meters",
+  "up": "Y",
+  "forward": "+Z",
+  "clips": [
+    {
+      "name": "Idle",
+      "source": "Idle_Loop",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 2.5,
+      "loop": true,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0137,
+      "grip": "right-hand"
+    },
+    {
+      "name": "Walk",
+      "source": "Walk_Loop",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 1.333333,
+      "loop": true,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0495,
+      "grip": "right-hand"
+    },
+    {
+      "name": "Run",
+      "source": "Jog_Fwd_Loop",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 0.933333,
+      "loop": true,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.1847,
+      "grip": "right-hand"
+    },
+    {
+      "name": "Sprint",
+      "source": "Sprint_Loop",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 0.666667,
+      "loop": true,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.2115,
+      "grip": "right-hand"
+    },
+    {
+      "name": "Hit",
+      "source": "Hit_Chest",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 0.333333,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0199,
+      "grip": "right-hand"
+    },
+    {
+      "name": "Defeat",
+      "source": "Death01",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 2.4,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.192,
+      "grip": "right-hand"
+    },
+    {
+      "name": "Interact",
+      "source": "Interact",
+      "library": "D:\\workspace\\resources\\Universal Animation Library[Standard]\\Unreal-Godot\\UAL1_Standard.glb",
+      "duration": 2,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0136,
+      "grip": "right-hand"
+    },
+    {
+      "name": "CombatIdle",
+      "source": "Tanjiro two-handed water breathing ready stance",
+      "library": "tools/characters/sword_actions.py",
+      "duration": 1.8,
+      "loop": true,
+      "inPlace": true,
+      "status": "authored",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0,
+      "grip": "two-handed"
+    },
+    {
+      "name": "Block",
+      "source": "Tanjiro two-handed diagonal sword guard",
+      "library": "tools/characters/sword_actions.py",
+      "duration": 1.2,
+      "loop": true,
+      "inPlace": true,
+      "status": "authored",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0,
+      "grip": "two-handed"
+    },
+    {
+      "name": "DodgeBack",
+      "source": "Dodge_Backward",
+      "library": "D:\\workspace\\resources\\KayKit\\KayKit_Character_Animations_1.1\\Animations\\gltf\\Rig_Medium\\Rig_Medium_MovementAdvanced.glb",
+      "duration": 0.4,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0102,
+      "grip": "right-hand"
+    },
+    {
+      "name": "DodgeForward",
+      "source": "Dodge_Forward",
+      "library": "D:\\workspace\\resources\\KayKit\\KayKit_Character_Animations_1.1\\Animations\\gltf\\Rig_Medium\\Rig_Medium_MovementAdvanced.glb",
+      "duration": 0.4,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.1178,
+      "grip": "right-hand"
+    },
+    {
+      "name": "DodgeLeft",
+      "source": "Dodge_Left",
+      "library": "D:\\workspace\\resources\\KayKit\\KayKit_Character_Animations_1.1\\Animations\\gltf\\Rig_Medium\\Rig_Medium_MovementAdvanced.glb",
+      "duration": 0.4,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0032,
+      "grip": "right-hand"
+    },
+    {
+      "name": "DodgeRight",
+      "source": "Dodge_Right",
+      "library": "D:\\workspace\\resources\\KayKit\\KayKit_Character_Animations_1.1\\Animations\\gltf\\Rig_Medium\\Rig_Medium_MovementAdvanced.glb",
+      "duration": 0.4,
+      "loop": false,
+      "inPlace": true,
+      "status": "retargeted",
+      "sampleRate": 30,
+      "maxGroundCorrectionMeters": 0.0034,
+      "grip": "right-hand"
+    },
+    {
+      "name": "DashSlash",
+      "source": "Handoff_Dash",
+      "library": "handoff-comparison/tanjiro-handoff.glb",
+      "duration": 1.5666666666666667,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "突进斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.1,
+            "end": 0.86,
+            "search": [
+              0.12,
+              0.72
+            ]
+          }
+        ],
+        "maxAge": 0.3,
+        "scale": 0.56
+      }
+    },
+    {
+      "name": "SwordCombo",
+      "source": "Handoff_Combo",
+      "library": "handoff-comparison/tanjiro-handoff.glb",
+      "duration": 3,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "轻连斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.12,
+            "end": 0.86,
+            "search": [
+              0.2,
+              0.78
+            ]
+          },
+          {
+            "start": 0.88,
+            "end": 1.49,
+            "search": [
+              0.92,
+              1.42
+            ]
+          },
+          {
+            "start": 1.5,
+            "end": 2.3,
+            "search": [
+              1.55,
+              2.24
+            ]
+          }
+        ],
+        "maxAge": 0.32,
+        "scale": 0.52
+      }
+    },
+    {
+      "name": "WaterWheel",
+      "source": "WaterWheel_Power",
+      "library": "handoff-comparison/tanjiro-waterwheel-power.glb",
+      "duration": 1.9,
+      "loop": false,
+      "status": "authored-retimed",
+      "grip": "right-hand",
+      "label": "水车 · 无双",
+      "inPlace": false,
+      "sampleRate": 120,
+      "landingTime": 0.64,
+      "swingStart": 0.84,
+      "contactTime": 1.08,
+      "swingEnd": 1.38,
+      "damageTimes": [
+        0.94,
+        1.02,
+        1.1,
+        1.18,
+        1.26,
+        1.34
+      ],
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.84,
+            "end": 1.38,
+            "peak": 1.08
+          }
+        ],
+        "maxAge": 0.3,
+        "scale": 0.72,
+        "spin": false
+      }
+    },
+    {
+      "name": "Light1",
+      "source": "Light1",
+      "library": "after-sunset/tanjiro-after-sunset.glb",
+      "duration": 0.45,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "轻击 ① 横斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.1,
+            "end": 0.36,
+            "search": [
+              0.12,
+              0.34
+            ]
+          }
+        ],
+        "maxAge": 0.3,
+        "scale": 0.5
+      }
+    },
+    {
+      "name": "Light2",
+      "source": "Light2",
+      "library": "after-sunset/tanjiro-after-sunset.glb",
+      "duration": 0.55,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "轻击 ② 反手斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.1,
+            "end": 0.4,
+            "search": [
+              0.12,
+              0.38
+            ]
+          }
+        ],
+        "maxAge": 0.3,
+        "scale": 0.5
+      }
+    },
+    {
+      "name": "Light3",
+      "source": "Light3",
+      "library": "after-sunset/tanjiro-after-sunset.glb",
+      "duration": 2,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "轻击 ③ 终结斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.38,
+            "end": 0.92,
+            "search": [
+              0.42,
+              0.86
+            ]
+          }
+        ],
+        "maxAge": 0.34,
+        "scale": 0.62
+      }
+    },
+    {
+      "name": "Heavy1",
+      "source": "Heavy1",
+      "library": "after-sunset/tanjiro-after-sunset.glb",
+      "duration": 1.5833333333333333,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "重击 ① 突进斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.1,
+            "end": 0.62,
+            "search": [
+              0.14,
+              0.52
+            ]
+          }
+        ],
+        "maxAge": 0.32,
+        "scale": 0.58
+      }
+    },
+    {
+      "name": "Heavy2",
+      "source": "Heavy2",
+      "library": "after-sunset/tanjiro-after-sunset.glb",
+      "duration": 3,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "重击 ② 连续斩击",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.12,
+            "end": 0.42,
+            "search": [
+              0.14,
+              0.36
+            ]
+          },
+          {
+            "start": 0.5,
+            "end": 0.98,
+            "search": [
+              0.55,
+              0.88
+            ]
+          },
+          {
+            "start": 1.3,
+            "end": 1.84,
+            "search": [
+              1.36,
+              1.74
+            ]
+          }
+        ],
+        "maxAge": 0.32,
+        "scale": 0.54
+      }
+    },
+    {
+      "name": "Heavy3",
+      "source": "Heavy3",
+      "library": "after-sunset/tanjiro-after-sunset.glb",
+      "duration": 4.35,
+      "loop": false,
+      "status": "adopted-retarget",
+      "grip": "right-hand",
+      "label": "重击 ③ 重击连斩",
+      "inPlace": true,
+      "sampleRate": 60,
+      "vfx": {
+        "windows": [
+          {
+            "start": 0.22,
+            "end": 0.62,
+            "search": [
+              0.26,
+              0.56
+            ]
+          },
+          {
+            "start": 0.96,
+            "end": 1.4,
+            "search": [
+              1,
+              1.34
+            ]
+          },
+          {
+            "start": 1.62,
+            "end": 2.1,
+            "search": [
+              1.68,
+              2.02
+            ]
+          },
+          {
+            "start": 2.38,
+            "end": 2.92,
+            "search": [
+              2.44,
+              2.84
+            ]
+          }
+        ],
+        "maxAge": 0.34,
+        "scale": 0.62
+      }
+    }
+  ],
+  "bones": {
+    "Root": "Root",
+    "Hips": "Hips",
+    "Head": "Head",
+    "LeftHand": "LeftHand",
+    "RightHand": "RightHand",
+    "LeftFoot": "LeftFoot",
+    "RightFoot": "RightFoot",
+    "SwordGrip": "SwordGrip",
+    "SwordTip": "SwordTip"
+  },
+  "expressions": [
+    "Key 1",
+    "vrc.v_aa",
+    "vrc.v_ch",
+    "vrc.v_dd",
+    "vrc.v_ee",
+    "vrc.v_ff",
+    "vrc.v_ih",
+    "vrc.v_kk",
+    "vrc.v_nn",
+    "vrc.v_oh",
+    "vrc.v_ou",
+    "vrc.v_pp",
+    "vrc.v_rr",
+    "vrc.v_ss",
+    "vrc.v_sil",
+    "vrc.v_th"
+  ],
+  "notes": [
+    "BloodBurst is a casting pose; blood VFX and gameplay are separate.",
+    "Tanjiro haori chains and Nezuko hair/skirt motion are baked and runtime-enhanced.",
+    "DashSlash, SwordCombo and WaterWheel replace Attack1, Attack2, Attack3 and WaterSpin. WaterWheel is a two-handed grounded ultimate: feet land by .64s, release .84-1.38s, recover to ready by 1.90s. Includes 3.4m baked root motion.",
+    "Light1-3 and Heavy1-3 are the after-sunset-20261021 sword takes (Lib_Sword_Regular_A/B/C, Lib_Sword_Dash, Lib_Sword_Regular_Combo, Lib_Sword_Heavy_Combo) retargeted onto this rig with the existing closed right-hand grip. DashSlash, SwordCombo and WaterWheel are unchanged."
+  ],
+  "revision": "after-sunset-20261021-v1",
+  "grip": {
+    "palmCenters": {
+      "Right": [
+        0.03500000014901161,
+        0.12300000339746475,
+        -0.00800000037997961
+      ],
+      "Left": [
+        -0.03500000014901161,
+        0.12300000339746475,
+        -0.00800000037997961
+      ]
+    },
+    "handleAxisLocal": [
+      0,
+      0,
+      -1
+    ],
+    "supportHandOffsetMeters": 0.085,
+    "twoHandedClips": [
+      "CombatIdle",
+      "Block",
+      "WaterWheel"
+    ],
+    "anchorFromHiltEndMeters": 0.18,
+    "fingers": {
+      "Index": {
+        "angles": [
+          18.5,
+          9.5,
+          13
+        ],
+        "tip": [
+          0.03765000402927399,
+          0.14194554090499878,
+          0.07093022018671036
+        ],
+        "minimumBoneRadius": 0.01761404214311228
+      },
+      "Middle": {
+        "angles": [
+          28.5,
+          43.5,
+          43.5
+        ],
+        "tip": [
+          0.05361507460474968,
+          0.11933751404285431,
+          0.03782441467046738
+        ],
+        "minimumBoneRadius": 0.014997218738291884
+      },
+      "Ring": {
+        "angles": [
+          30,
+          65,
+          54
+        ],
+        "tip": [
+          0.05216611549258232,
+          0.11313342303037643,
+          0.007240472361445427
+        ],
+        "minimumBoneRadius": 0.01645374957640907
+      },
+      "Little": {
+        "angles": [
+          27,
+          70,
+          66
+        ],
+        "tip": [
+          0.052286628633737564,
+          0.11284545063972473,
+          -0.027421215549111366
+        ],
+        "minimumBoneRadius": 0.016869559994683578
+      },
+      "Thumb": {
+        "tip": [
+          0.052000004798173904,
+          0.11400000751018524,
+          0.018000002950429916
+        ],
+        "targetError": 9.125060374972142e-9
+      }
+    },
+    "implementation": "tools/characters/grip.py"
+  }
+}

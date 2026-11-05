@@ -1,0 +1,158 @@
+{
+  "revision": "after-sunset-enemies-20261021-v1",
+  "assets": [
+    {
+      "id": "demon-1",
+      "file": "demon-1.glb",
+      "height": 1.78,
+      "bytes": 2408148,
+      "sourceBytes": 4741472,
+      "sha256": "dcd0af032eb0e5f35e0ed21bc3bbec979b9674a1c7a4c0f7d51e1d9de9b5e8da",
+      "clips": {
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Death01": 2.4166666666666665
+      }
+    },
+    {
+      "id": "demon-2",
+      "file": "demon-2.glb",
+      "height": 1.8,
+      "bytes": 1591860,
+      "sourceBytes": 3556292,
+      "sha256": "726adc20e44fca8e5cbfc1b5dc6becd2cc1f40faa34925a0c418d1080977fb6d",
+      "clips": {
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Death01": 2.4166666666666665
+      }
+    },
+    {
+      "id": "demon-3",
+      "file": "demon-3.glb",
+      "height": 1.85,
+      "bytes": 2598636,
+      "sourceBytes": 4900816,
+      "sha256": "2e9ea17c95926405b35ff768df99d3400ddd726e1fa4f06438d9b03411b44f36",
+      "clips": {
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Death01": 2.4166666666666665
+      }
+    },
+    {
+      "id": "demon-4",
+      "file": "demon-4.glb",
+      "height": 1.78,
+      "bytes": 1534112,
+      "sourceBytes": 3427188,
+      "sha256": "4274b039911087dc26c9c5468846b6d147641c369cd058df4dc05a69cb36d41d",
+      "clips": {
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Death01": 2.4166666666666665
+      }
+    },
+    {
+      "id": "demon-5",
+      "file": "demon-5.glb",
+      "height": 1.9,
+      "bytes": 1995616,
+      "sourceBytes": 4613028,
+      "sha256": "5add2ce20e1ea46e09ed0a2f3acb1bf5ffbf0c5709993bd7436e9d0086927fe8",
+      "clips": {
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Death01": 2.4166666666666665
+      }
+    },
+    {
+      "id": "daki",
+      "file": "daki.glb",
+      "height": 1.8,
+      "bytes": 3922040,
+      "sourceBytes": 12158604,
+      "sha256": "e4ff01db02f3f2703cf8211e2d48fc7e0a67493b94716987a8072ac61e6dba3b",
+      "clips": {
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Death01": 2.4166666666666665,
+        "Lib_Daki_Kick": 1.3,
+        "Lib_Daki_Thrust": 1.6,
+        "Lib_Daki_Sweep": 2
+      }
+    },
+    {
+      "id": "gyutaro",
+      "file": "gyutaro.glb",
+      "height": 1.95,
+      "bytes": 1111248,
+      "sourceBytes": 4613812,
+      "sha256": "4edc1ff9a7593776a4567535266704e93d29c912aa887faaa5e8c96bd216a35d",
+      "clips": {
+        "Lib_Sword_Dash": 1.5833333333333333,
+        "Lib_Sword_Regular_A": 0.45,
+        "Lib_Sword_Regular_C": 2,
+        "Lib_Hit_Knockback": 0.8333333333333334,
+        "Lib_Idle_No_Loop": 2.5,
+        "Lib_Melee_Hook": 0.48333333333333334,
+        "Lib_Zombie_Scratch": 1.8,
+        "Lib_Punch_Jab": 0.8833333333333333,
+        "Lib_Punch_Cross": 1,
+        "Lib_Hit_Chest": 0.35,
+        "Lib_Spell_Simple_Shoot": 0.5,
+        "Lib_Death01": 2.4166666666666665,
+        "Lib_Walk_Loop": 1.35,
+        "Lib_Jog_Fwd_Loop": 0.95
+      }
+    }
+  ]
+}

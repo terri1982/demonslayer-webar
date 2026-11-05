@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b131e">
+  <meta name="description" content="鬼灭之刃·夜巡街道 WebAR / WebXR 空间体验：一个 HTTPS 链接同时适配手机后置相机手持 WebAR、XREAL AR 眼镜双目透视 WebXR 与桌面 3D 触控预览。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b131e'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23a5f1ec' stroke-width='2'/%3E%3C/svg%3E">
+  <title>鬼灭之刃 · 夜巡街道</title>
+  <script src="./vendor/effekseer/effekseer.js"></script>
+  <script type="module" crossorigin src="./vendor/app.js"></script>
+  <link rel="modulepreload" crossorigin href="./vendor/three-r165.js">
+  <link rel="stylesheet" crossorigin href="./vendor/style.css">
+</head>
+<body>
+  <!-- 底层手机后置实景视频流（仅手持模式使用；AR 眼镜模式绝不调用 getUserMedia） -->
+  <video id="camera" autoplay playsinline muted hidden aria-label="手机后置实景摄像头画面"></video>
+
+  <!-- 无相机 / 桌面浏览器美观渐层背景 -->
+  <div id="fallback-backdrop" aria-hidden="true">
+    <div class="backdrop-glow"></div>
+    <div class="backdrop-grid"></div>
+  </div>
+
+  <!-- Three.js WebGL / WebXR 空间画布 -->
+  <canvas id="ar-stage" aria-label="鬼灭之刃藤花结界 3D 空间画布"></canvas>
+
+  <!-- 2D HTML 交互层（AR 眼镜模式 isGlasses === true 时整层隐藏，改由 3D CanvasTexture 世界铭牌引导） -->
+  <main id="ui-root">
+    <div id="vignette" aria-hidden="true"></div>
+    <div id="danger-wash" aria-hidden="true"></div>
+    <div id="hit-flash" aria-hidden="true"></div>
+    <div id="dawn" aria-hidden="true"></div>
+
+    <!-- 首屏：同时展示右侧/上方可拖拽 3D 炭治郎藤花结界预览 + 清晰中文模式入口 -->
+    <section id="welcome" aria-labelledby="hero-title">
+      <div class="welcome-card">
+        <div class="brand-row">
+          <span class="seal-mark" aria-hidden="true">滅</span>
+          <div>
+            <small class="eyebrow">METATOUR WEBAR · WEBXR</small>
+            <h1 id="hero-title">鬼灭之刃 · 夜巡街道</h1>
+          </div>
+        </div>
+
+        <p class="tagline">与炭治郎并肩驻守正前方 2.2 米藤花结界，迎击袭来的恶鬼与上弦之陆·堕姬。</p>
+
+        <div class="spec-pills" aria-label="空间规格">
+          <span>手持后置 WebAR</span>
+          <span>AR 眼镜双目 WebXR</span>
+          <span>桌面 3D 触控降级</span>
+        </div>
+
+        <p id="load-status" class="status-pill" role="status">正在载入炭治郎与水之呼吸音源…</p>
+        <p id="camera-notice" class="notice-banner" role="status" hidden></p>
+
+        <div class="cta-stack">
+          <button id="btn-camera-ar" type="button" class="btn-primary">
+            <span>开启后置相机 WebAR</span>
+            <i aria-hidden="true">↗</i>
+          </button>
+
+          <button id="btn-touch-preview" type="button" class="btn-secondary">
+            直接 3D 触控试玩（免相机）
+          </button>
+
+          <button id="btn-switch-glasses" type="button" class="btn-glasses" hidden>
+            投送到 AR 眼镜
+          </button>
+        </div>
+
+        <div class="welcome-footer">
+          <span id="pose-hint">提示：现在即可用鼠标或手指拖动画面环视 3D 结界</span>
+          <a
+            class="container-link"
+            href="https://terri.sightp.com/projects/yuanyou-webar-browser/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >下载元游 WebAR 浏览器 ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 战斗 HUD（桌面 1440px 与手机 390px 自适应零重叠） -->
+    <section id="hud" hidden aria-label="战斗界面">
+      <header class="hud-top">
+        <div class="hud-left-group">
+          <div class="vitals">
+            <span class="seal" aria-hidden="true">守</span>
+            <div class="vitals-body">
+              <div class="vitals-row">
+                <small>藤花结界</small>
+                <b id="hp-text">100%</b>
+              </div>
+              <div class="health-track"><i id="health"></i></div>
+              <span id="phase">沿街前行 · 并肩迎敌</span>
+            </div>
+          </div>
+
+          <div class="clock">
+            <small id="clock-label">距鬼首</small>
+            <strong id="timer">60 m</strong>
+            <span id="kills">0 击破</span>
+          </div>
+        </div>
+
+        <div class="top-tools">
+          <button id="hud-switch-glasses" type="button" class="btn-glasses-mini" hidden>投送到眼镜</button>
+          <button id="pause" type="button" class="btn-icon-pause" aria-label="暂停与设置">Ⅱ</button>
+        </div>
+      </header>
+
+      <div id="reticle" aria-hidden="true"><i></i><span id="target-label"></span></div>
+      <div id="edge-arrow" hidden>‹ 拖动画面或转向寻找恶鬼 ›</div>
+
+      <div id="danger" hidden role="alert">
+        <span>危</span>
+        <div>
+          <b id="danger-name"></b>
+          <small id="danger-time"></small>
+        </div>
+      </div>
+
+      <div id="message" role="status"></div>
+
+      <div id="technique" hidden>
+        <small>水之呼吸 · 贰之型</small>
+        <strong>水　车</strong>
+        <span>与炭治郎 · 合击</span>
+      </div>
+
+      <div id="boss-hud" hidden>
+        <span>上弦之陆 · 堕姬</span>
+        <div><i id="boss-health"></i></div>
+      </div>
+
+      <footer class="hud-bottom">
+        <div class="left-controls">
+          <button id="dodge-left" type="button" class="dodge" aria-label="向左闪避">‹<b>左闪</b></button>
+          <button id="dodge-right" type="button" class="dodge" aria-label="向右闪避">›<b>右闪</b></button>
+        </div>
+
+        <div class="right-controls">
+          <button id="musou" type="button" aria-disabled="true">
+            <span>水车</span>
+            <small id="energy-label">0%</small>
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="45" />
+              <circle id="energy-ring" cx="50" cy="50" r="45" />
+            </svg>
+          </button>
+          <button id="heavy" type="button">
+            <span id="heavy-name">①</span>
+            <small id="heavy-stage">突进斩</small>
+          </button>
+          <button id="light" type="button">
+            <span id="light-name">①</span>
+            <small id="light-stage">横斩</small>
+          </button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- 暂停弹窗 -->
+    <section id="pause-menu" class="modal-backdrop" hidden>
+      <div class="modal-panel">
+        <small class="eyebrow">深呼吸 · 再次握紧日轮刀</small>
+        <h2>结界已暂停</h2>
+        <p id="pause-copy">战场会锚定在正前方等待你归来。</p>
+        <div class="modal-actions">
+          <button id="resume" type="button" class="btn-primary"><span>继续守护</span><i aria-hidden="true">→</i></button>
+          <button id="recenter" type="button" class="btn-secondary">校准回正前方</button>
+          <button id="sound" type="button" class="btn-secondary">声音：开</button>
+          <button id="toggle-camera-pause" type="button" class="btn-secondary">切换相机 / 3D 背景</button>
+          <button id="restart" type="button" class="btn-secondary">重新开始本局</button>
+          <button id="leave" type="button" class="btn-secondary btn-subtle">返回模式入口</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 结算弹窗 -->
+    <section id="result" class="modal-backdrop" hidden>
+      <div class="modal-panel">
+        <small class="eyebrow" id="result-eyebrow">藤花依旧盛开</small>
+        <h2 id="result-title">你与炭治郎守住了街道</h2>
+        <p id="result-copy">黎明微光穿过藤花结界，恶鬼已尽数退散。</p>
+        <div class="result-stats">
+          <div><strong id="result-kills">0</strong><small>恶鬼击破</small></div>
+          <div><strong id="result-perfect">0</strong><small>完美闪避</small></div>
+          <div><strong id="result-musou">0</strong><small>水车合击</small></div>
+        </div>
+        <div class="modal-actions">
+          <button id="again" type="button" class="btn-primary"><span>再守护一次</span><i aria-hidden="true">↻</i></button>
+          <button id="exit" type="button" class="btn-secondary btn-subtle">返回首页</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+</body>
+</html>
