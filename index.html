@@ -81,30 +81,29 @@
     <!-- 战斗 HUD（桌面 1440px 与手机 390px 自适应零重叠） -->
     <section id="hud" hidden aria-label="战斗界面">
       <header class="hud-top">
-        <div class="vitals">
-          <span class="seal" aria-hidden="true">守</span>
-          <div class="vitals-body">
-            <div class="vitals-row">
-              <small>藤花结界</small>
-              <b id="hp-text">100%</b>
+        <div class="hud-left-group">
+          <div class="vitals">
+            <span class="seal" aria-hidden="true">守</span>
+            <div class="vitals-body">
+              <div class="vitals-row">
+                <small>藤花结界</small>
+                <b id="hp-text">100%</b>
+              </div>
+              <div class="health-track"><i id="health"></i></div>
+              <span id="phase">沿街前行 · 并肩迎敌</span>
             </div>
-            <div class="health-track"><i id="health"></i></div>
-            <span id="phase">沿街前行 · 并肩迎敌</span>
+          </div>
+
+          <div class="clock">
+            <small id="clock-label">距鬼首</small>
+            <strong id="timer">60 m</strong>
+            <span id="kills">0 击破</span>
           </div>
         </div>
 
-        <div class="clock">
-          <small id="clock-label">距鬼首</small>
-          <strong id="timer">60 m</strong>
-          <span id="kills">0 击破</span>
-        </div>
-
         <div class="top-tools">
-          <span id="mode-badge">3D 预览</span>
-          <button id="hud-switch-glasses" type="button" class="btn-glasses-mini" hidden>投送到 AR 眼镜</button>
-          <button id="recenter-hud" type="button" aria-label="校准正前方">正前</button>
-          <button id="sound" type="button" aria-label="切换声音">声音 开</button>
-          <button id="pause" type="button" aria-label="暂停">暂停</button>
+          <button id="hud-switch-glasses" type="button" class="btn-glasses-mini" hidden>投送到眼镜</button>
+          <button id="pause" type="button" class="btn-icon-pause" aria-label="暂停与设置">Ⅱ</button>
         </div>
       </header>
 
@@ -166,8 +165,9 @@
         <h2>结界已暂停</h2>
         <p id="pause-copy">战场会锚定在正前方等待你归来。</p>
         <div class="modal-actions">
-          <button id="resume" type="button" class="btn-primary modal-span-full"><span>继续守护</span><i aria-hidden="true">→</i></button>
+          <button id="resume" type="button" class="btn-primary"><span>继续守护</span><i aria-hidden="true">→</i></button>
           <button id="recenter" type="button" class="btn-secondary">校准回正前方</button>
+          <button id="sound" type="button" class="btn-secondary">声音：开</button>
           <button id="toggle-camera-pause" type="button" class="btn-secondary">切换相机 / 3D 背景</button>
           <button id="restart" type="button" class="btn-secondary">重新开始本局</button>
           <button id="leave" type="button" class="btn-secondary btn-subtle">返回模式入口</button>

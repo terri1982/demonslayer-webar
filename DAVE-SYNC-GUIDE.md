@@ -29,11 +29,12 @@
 5. **手机手持 60Hz 原生姿态与 `pose.screenAngle` 横竖屏补偿（关键！）**
    - `v1.4.0` 手持模式默认开启传感器自由横竖屏（也可按需调用 `window.MetaTourWebAR?.setPreferredOrientation?.('auto' | 'landscape' | 'portrait')`），并通过 `window.MetaTourWebAR.onPose(pose => ...)` 推送 ENU 四元数 `{x, y, z, w}` 与屏幕旋转角 `pose.screenAngle`（`0 / 90 / 180 / 270`）。
    - 网页端必须先左乘 `ENU_TO_THREE_WORLD = R_x(-Math.PI / 2)`，再右乘 `R_z(-degToRad(pose.screenAngle))` 转换到 Three.js `Y`-up 世界坐标系，并在 `window.MetaTourWebAR?.onOrientationChange?.(...)` / `resize` 时实时更新渲染器尺寸与相机 `aspect`。
-6. **手机横屏高密度 UI 排布与 `--metatour-top-inset` 防重复叠加（实机踩坑重点！）**
-   - 容器手持模式注入 `--metatour-top-inset`（竖屏 `76px`、横屏紧凑胶囊栏 `60px`）。安卓旗舰（如 Samsung S22 横屏 CSS 视口仅 `780×360`）扣除顶部 `60px` 后可用高度仅 **`300px`**：
-     - **严禁重复叠加安全区**：若 `.hud-top` 已用 `top: calc(var(--metatour-top-inset, 0px) + 4px)` 定位，横屏媒体查询切勿再加 `padding-top: var(--metatour-top-inset)`，否则顶部栏下移至 `~132px` 会直接撞上中央准星与提示条。
-     - **战斗 HUD 分层无碰撞**：横屏下中央计分牌改为单行胶囊，提示条（`+42px`）、危字预警（`+68px`）、准星（`52%`）分层排布；圆形技能按钮（如「水车」）用 `padding: 0` + Flex 居中，避免横向 `padding` 挤压文字溢出圆环。
-     - **首屏与暂停弹窗双列布局**：横屏高度 `<= 520px` 时，首屏卡片固定左侧（右侧通过 `camera.setViewOffset` 留白完整展示 3D 炭治郎与鸟居），按钮与暂停弹窗选项改为双列网格，确保在 `360px` 高度内零滚动、零底部裁切。
+6. **手机横屏极简四角 HUD 排布与零常驻横栏规范（实机体验重点！）**
+   - 安卓旗舰横屏视口高度很窄（如 Samsung S22 横屏 CSS 视口仅 `780×360`），**严禁在网页顶部铺设整排常驻工具栏或堆叠两排 UI**：
+     - **四角极简排布（顶部正中 100% 留白）**：左上角合并为 `28px` 高的超薄血量胶囊与单行里程胶囊（`距鬼首 60 m · 0 击破`），右上角仅保留单枚 `30×30px` 正圆 `Ⅱ` 暂停按钮；「声音开关」「校准回正前方」「切换相机/3D 背景」全部收入暂停菜单（`3×2` 紧凑双列网格），彻底消除顶部横条遮挡。
+     - **自适应 `--metatour-top-inset`（默认 `0px`）且绝不重复叠加**：顶部角标使用 `top: calc(max(env(safe-area-inset-top), var(--metatour-top-inset, 0px)) + 6px)`，既兼容无常驻顶栏的新版沉浸容器（`0px`），也自动避让旧版胶囊栏，严禁在横屏媒体查询中重复叠加 `padding-top`。
+     - **战斗字幕沉底、准星回归正心**：横屏下将 `#message` 战斗提示移至底部左右操控区之间的空档（`bottom: max(12px, env(safe-area-inset-bottom))`），准星保持 `50%` 光学正心，`危` 字预警在顶部留白区独立弹出；圆形技能按钮（如「水车」）用 `padding: 0` + Flex 居中，避免文字溢出圆环。
+     - **首屏左侧卡片 + 右侧 3D 留白**：横屏高度 `<= 520px` 时，首屏卡片固定左侧（右侧通过 `camera.setViewOffset` 留白完整展示 3D 炭治郎与鸟居），按钮双列排布，确保在 `360px` 高度内零滚动、零底部裁切。
 7. **可选 EasyAR Mega 空间锚点平滑消漂桥接**
    - 拿到 Mega 位姿后调用 `window.MetaTourWebAR?.applyMegaPose({ anchorId, position, quaternion, confidence, referenceSpace: 'local-floor' })`，由容器底层以每帧 `<= 3.5cm` 平滑融合消漂，网页端不直接瞬移跳变相机矩阵。
 

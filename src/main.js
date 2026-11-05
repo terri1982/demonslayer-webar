@@ -186,7 +186,8 @@ function syncBackdropVisibility(isCameraOn) {
   }
   videoEl.hidden = !cameraActive;
   backdropEl.hidden = cameraActive;
-  $('#mode-badge').textContent = cameraActive ? '后置相机 AR' : '3D 触控预览';
+  const badge = $('#mode-badge');
+  if (badge) badge.textContent = cameraActive ? '后置相机 AR' : '3D 触控预览';
 }
 syncBackdropVisibility(false);
 
@@ -207,7 +208,8 @@ function showMessage(text, duration = 2.4) {
 
 function syncSoundButton() {
   if (isGlasses) return;
-  $('#sound').textContent = audio.enabled ? '声音 开' : '声音 关';
+  const btn = $('#sound');
+  if (btn) btn.textContent = audio.enabled ? '声音：开' : '声音：关';
 }
 syncSoundButton();
 
@@ -412,7 +414,7 @@ if (!isGlasses) {
   $('#btn-switch-glasses').addEventListener('click', onSwitchGlasses);
   $('#hud-switch-glasses').addEventListener('click', onSwitchGlasses);
 
-  $('#recenter-hud').addEventListener('click', () => {
+  $('#recenter-hud')?.addEventListener('click', () => {
     poseCtrl.recenter();
     showMessage('已将结界校准回当前正前方', 1.6);
   });
