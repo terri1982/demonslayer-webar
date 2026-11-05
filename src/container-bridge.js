@@ -72,7 +72,10 @@ export function createPoseController({ onExternalRecenter } = {}) {
   const upAxis = new T.Vector3(0, 1, 0);
   const forward = new T.Vector3();
 
-  function screenAngle() {
+  function screenAngle(pose = null) {
+    if (Number.isFinite(Number(pose?.screenAngle))) {
+      return Number(pose.screenAngle);
+    }
     return Number(window.screen?.orientation?.angle ?? window.orientation ?? 0);
   }
 
@@ -120,7 +123,7 @@ export function createPoseController({ onExternalRecenter } = {}) {
         parsed.y,
         parsed.z,
         parsed.w,
-        screenAngle(),
+        screenAngle(pose),
         nativeQuat,
       );
     } else {
@@ -157,6 +160,14 @@ export function createPoseController({ onExternalRecenter } = {}) {
   };
   window.addEventListener('metatour-heading-reset', onHostResetEvent);
   window.addEventListener('xreal-view-reset', onHostResetEvent);
+  const onScreenOrientationChange = () => {
+    baselineYaw = null;
+  };
+  window.addEventListener('orientationchange', onScreenOrientationChange);
+  window.screen?.orientation?.addEventListener?.('change', onScreenOrientationChange);
+  try {
+    window.MetaTourWebAR?.setPreferredOrientation?.('auto');
+  } catch {}
 
   function onDeviceOrientation(e) {
     if (![e.alpha, e.beta, e.gamma].every(Number.isFinite)) return;

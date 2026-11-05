@@ -935,6 +935,14 @@ h2 {
     font-size: 11px;
   }
 
+  #message {
+    top: max(23%, calc(var(--metatour-top-inset, 0px) + 128px));
+  }
+
+  #danger {
+    top: max(30%, calc(var(--metatour-top-inset, 0px) + 176px));
+  }
+
   .dodge {
     width: 46px;
     height: 54px;
@@ -957,6 +965,101 @@ h2 {
 
   #musou {
     margin-bottom: 10px;
+  }
+}
+
+/* 手机横屏（如 844×390）紧凑排布与刘海安全区适配 */
+@media (max-height: 500px) and (orientation: landscape) {
+  #welcome {
+    padding: calc(8px + max(env(safe-area-inset-top), var(--metatour-top-inset, 0px)))
+      max(16px, env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .welcome-card {
+    max-width: min(680px, 94vw);
+    padding: 12px 18px;
+  }
+
+  .welcome-card h1 {
+    font-size: 20px;
+    margin: 4px 0 2px;
+  }
+
+  .subtitle {
+    display: none;
+  }
+
+  .welcome-desc {
+    margin: 4px 0 8px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .spec-pills {
+    margin-bottom: 6px;
+  }
+
+  .cta-stack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .cta-stack > button {
+    flex: 1 1 200px;
+    min-height: 38px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+  }
+
+  .welcome-footer {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .hud-top {
+    padding: calc(6px + max(env(safe-area-inset-top), var(--metatour-top-inset, 0px)))
+      max(14px, env(safe-area-inset-right))
+      0
+      max(14px, env(safe-area-inset-left));
+  }
+
+  .hud-bottom {
+    padding: 0 max(16px, env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .dodge {
+    width: 44px;
+    height: 48px;
+    font-size: 18px;
+  }
+
+  .right-controls button {
+    width: 50px;
+    height: 50px;
+  }
+
+  #light {
+    width: 60px;
+    height: 60px;
+  }
+
+  #musou {
+    margin-bottom: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+
+  #message {
+    top: max(18%, calc(var(--metatour-top-inset, 0px) + 56px));
+  }
+
+  #danger {
+    top: max(26%, calc(var(--metatour-top-inset, 0px) + 96px));
   }
 }
 
