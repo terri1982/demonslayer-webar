@@ -1,0 +1,13 @@
+{
+  "revision": "grounded-musou-20261020-v1",
+  "duration": 1.9,
+  "frontFootLanding": 0.58,
+  "landingTime": 0.64,
+  "compressionTime": 0.7,
+  "swingStart": 0.84,
+  "contactTime": 1.08,
+  "swingEnd": 1.38,
+  "damageTimes": [0.94, 1.02, 1.1, 1.18, 1.26, 1.34],
+  "recoveryStart": 1.4,
+  "travelDistance": 3.4
+}

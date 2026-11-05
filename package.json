@@ -1,0 +1,19 @@
+{
+  "name": "demonslayer-metatour-webar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "鬼灭之刃 · 夜巡街道 MetaTour 手持 WebAR 与 AR 眼镜双目透视 WebXR 双模空间网页",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5192 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5193 --strictPort"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm-materials-mtoon": "3.5.5",
+    "three": "0.165.0"
+  },
+  "devDependencies": {
+    "vite": "6.2.0"
+  }
+}
