@@ -13,12 +13,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        entryFileNames: 'vendor/app.js',
+        entryFileNames: 'vendor/app-[hash].js',
         chunkFileNames: chunkInfo =>
-          chunkInfo.name === 'three' ? 'vendor/three-r165.js' : 'vendor/[name].js',
+          chunkInfo.name === 'three' ? 'vendor/three-r165.js' : 'vendor/[name]-[hash].js',
         assetFileNames: assetInfo => {
           if (assetInfo.name && assetInfo.name.endsWith('.css')) {
-            return 'vendor/style.css';
+            return 'vendor/style-[hash].css';
           }
           return 'assets/[name][extname]';
         },
