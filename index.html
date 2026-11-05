@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b131e">
   <meta name="description" content="鬼灭之刃·夜巡街道 WebAR / WebXR 空间体验：一个 HTTPS 链接同时适配手机后置相机手持 WebAR、XREAL AR 眼镜双目透视 WebXR 与桌面 3D 触控预览。">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b131e'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23a5f1ec' stroke-width='2'/%3E%3C/svg%3E">
-  <title>鬼灭之刃 · 夜巡街道｜手持 WebAR &amp; AR 眼镜双目 WebXR</title>
+  <title>鬼灭之刃 · 夜巡街道</title>
   <script src="./vendor/effekseer/effekseer.js"></script>
 </head>
 <body>
@@ -58,7 +58,7 @@
           </button>
 
           <button id="btn-touch-preview" type="button" class="btn-secondary">
-            直接 3D 触控试玩（免相机 / 桌面推荐）
+            直接 3D 触控试玩（免相机）
           </button>
 
           <button id="btn-switch-glasses" type="button" class="btn-glasses" hidden>
@@ -165,11 +165,13 @@
         <small class="eyebrow">深呼吸 · 再次握紧日轮刀</small>
         <h2>结界已暂停</h2>
         <p id="pause-copy">战场会锚定在正前方等待你归来。</p>
-        <button id="resume" type="button" class="btn-primary"><span>继续守护</span><i aria-hidden="true">→</i></button>
-        <button id="recenter" type="button" class="btn-secondary">将结界校准回正前方</button>
-        <button id="toggle-camera-pause" type="button" class="btn-secondary">切换后置相机 / 3D 预览背景</button>
-        <button id="restart" type="button" class="btn-secondary">重新开始本局</button>
-        <button id="leave" type="button" class="btn-text">返回模式入口</button>
+        <div class="modal-actions">
+          <button id="resume" type="button" class="btn-primary modal-span-full"><span>继续守护</span><i aria-hidden="true">→</i></button>
+          <button id="recenter" type="button" class="btn-secondary">校准回正前方</button>
+          <button id="toggle-camera-pause" type="button" class="btn-secondary">切换相机 / 3D 背景</button>
+          <button id="restart" type="button" class="btn-secondary">重新开始本局</button>
+          <button id="leave" type="button" class="btn-secondary btn-subtle">返回模式入口</button>
+        </div>
       </div>
     </section>
 
@@ -184,8 +186,10 @@
           <div><strong id="result-perfect">0</strong><small>完美闪避</small></div>
           <div><strong id="result-musou">0</strong><small>水车合击</small></div>
         </div>
-        <button id="again" type="button" class="btn-primary"><span>再守护一次</span><i aria-hidden="true">↻</i></button>
-        <button id="exit" type="button" class="btn-text">返回首页</button>
+        <div class="modal-actions">
+          <button id="again" type="button" class="btn-primary"><span>再守护一次</span><i aria-hidden="true">↻</i></button>
+          <button id="exit" type="button" class="btn-secondary btn-subtle">返回首页</button>
+        </div>
       </div>
     </section>
   </main>

@@ -88,14 +88,33 @@ dirLight.position.set(1.8, 4.6, 2.6);
 dirLight.castShadow = false;
 worldRoot.add(dirLight);
 
+let ally = null;
+let assetsReady = false;
+let mode = isGlasses ? 'battle' : 'welcome';
+let cameraActive = false;
+let battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
+
 function syncViewportSize() {
   if (renderer.xr.isPresenting) return;
-  const width = window.innerWidth;
+  const width = Math.max(1, window.innerWidth);
   const height = Math.max(1, window.innerHeight);
   renderer.setSize(width, height, false);
   // Slightly wider vertical FOV on narrow portrait phones so the 1.44m stage at z=-2.2m fits with generous margin.
   camera.aspect = width / height;
   camera.fov = width < height ? 58 : 48;
+  // On the Welcome screen, shift the optical frustum into the open half of the viewport
+  // (right half on desktop/landscape, upper half on portrait) so Tanjiro & the Wisteria torii are never occluded by the card.
+  if (!isGlasses && mode === 'welcome') {
+    if (width > height && width >= 560) {
+      camera.setViewOffset(width, height, -Math.round(width * 0.21), 0, width, height);
+    } else if (width <= height) {
+      camera.setViewOffset(width, height, 0, Math.round(height * 0.14), width, height);
+    } else {
+      camera.clearViewOffset();
+    }
+  } else {
+    camera.clearViewOffset();
+  }
   camera.updateProjectionMatrix();
 }
 syncViewportSize();
@@ -107,6 +126,11 @@ const poseCtrl = createPoseController({
     if (!isGlasses && mode === 'battle') {
       showMessage('已响应容器「回正」校准正前方视角', 1.6);
     }
+  },
+  onOrientationChange() {
+    syncViewportSize();
+    window.requestAnimationFrame(syncViewportSize);
+    window.setTimeout(syncViewportSize, 120);
   },
 });
 const rearCamera = createRearCamera(videoEl, {
@@ -136,11 +160,6 @@ const glassesBridge = createGlassesBridge({
   },
 });
 
-let ally = null;
-let assetsReady = false;
-let mode = isGlasses ? 'battle' : 'welcome';
-let cameraActive = false;
-let battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
 let lastNow = performance.now();
 let accumulator = 0;
 let messageUntil = 0;
@@ -273,6 +292,7 @@ function enterBattle() {
   ally?.reset(battle.ally);
   mode = 'battle';
   gazeHoldSec = 0;
+  syncViewportSize();
   if (!isGlasses) {
     $('#welcome').hidden = true;
     $('#pause-menu').hidden = true;
@@ -451,6 +471,7 @@ if (!isGlasses) {
     battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
     ally?.reset(battle.ally);
     mode = 'welcome';
+    syncViewportSize();
     $('#hud').hidden = true;
     $('#pause-menu').hidden = true;
     $('#result').hidden = true;

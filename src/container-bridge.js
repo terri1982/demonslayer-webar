@@ -53,10 +53,11 @@ export function androidRotationVectorToThreeQuaternion(qx, qy, qz, qw, screenAng
 // Priority 1: window.MetaTourWebAR?.onPose(pose => ...) (60Hz native container quaternion)
 // Priority 2: DeviceOrientationEvent 3DoF gyroscope
 // Priority 3: Touch / Mouse orbit-look drag
-export function createPoseController({ onExternalRecenter } = {}) {
+export function createPoseController({ onExternalRecenter, onOrientationChange } = {}) {
   let nativePoseActive = false;
   let nativePoseSource = '';
   let lastHeadingGen = null;
+  let latestContainerAngle = null;
   let gyroActive = false;
   let gyroPermission = 'unknown';
   let latestGyro = null;
@@ -73,8 +74,16 @@ export function createPoseController({ onExternalRecenter } = {}) {
   const forward = new T.Vector3();
 
   function screenAngle(pose = null) {
-    if (Number.isFinite(Number(pose?.screenAngle))) {
-      return Number(pose.screenAngle);
+    if (pose && pose.screenAngle !== undefined && Number.isFinite(Number(pose.screenAngle))) {
+      latestContainerAngle = Number(pose.screenAngle);
+      return latestContainerAngle;
+    }
+    if (latestContainerAngle !== null && Number.isFinite(latestContainerAngle)) {
+      return latestContainerAngle;
+    }
+    const hostAngle = window.MetaTourWebAR?.getScreenAngle?.();
+    if (hostAngle !== undefined && Number.isFinite(Number(hostAngle))) {
+      return Number(hostAngle);
     }
     return Number(window.screen?.orientation?.angle ?? window.orientation ?? 0);
   }
@@ -138,8 +147,23 @@ export function createPoseController({ onExternalRecenter } = {}) {
     }
   }
 
-  // Subscribe to MetaTourWebAR 60Hz native pose stream if present, and re-bind if injected slightly after DOM start.
+  // Subscribe to MetaTourWebAR 60Hz native pose stream & v1.4.0 orientation change hooks if present.
   let boundHost = null;
+  function handleOrientationSignal(detail = null) {
+    if (detail && detail.screenAngle !== undefined && Number.isFinite(Number(detail.screenAngle))) {
+      latestContainerAngle = Number(detail.screenAngle);
+    } else {
+      latestContainerAngle = null;
+    }
+    if (!nativePoseActive) {
+      baselineYaw = null;
+    }
+    onOrientationChange?.({
+      screenAngle: screenAngle(),
+      landscape: window.innerWidth > window.innerHeight,
+    });
+  }
+
   function tryBindMetaTourPose() {
     const host = window.MetaTourWebAR;
     if (!host || host === boundHost) return;
@@ -147,6 +171,12 @@ export function createPoseController({ onExternalRecenter } = {}) {
       boundHost = host;
       try {
         host.onPose(pose => ingestNativePose(pose));
+      } catch {}
+      try {
+        host.onOrientationChange?.(detail => handleOrientationSignal(detail));
+      } catch {}
+      try {
+        host.setPreferredOrientation?.('auto');
       } catch {}
     }
   }
@@ -160,14 +190,9 @@ export function createPoseController({ onExternalRecenter } = {}) {
   };
   window.addEventListener('metatour-heading-reset', onHostResetEvent);
   window.addEventListener('xreal-view-reset', onHostResetEvent);
-  const onScreenOrientationChange = () => {
-    baselineYaw = null;
-  };
-  window.addEventListener('orientationchange', onScreenOrientationChange);
-  window.screen?.orientation?.addEventListener?.('change', onScreenOrientationChange);
-  try {
-    window.MetaTourWebAR?.setPreferredOrientation?.('auto');
-  } catch {}
+  window.addEventListener('metatour-orientation', e => handleOrientationSignal(e?.detail ?? null));
+  window.addEventListener('orientationchange', () => handleOrientationSignal(null));
+  window.screen?.orientation?.addEventListener?.('change', () => handleOrientationSignal(null));
 
   function onDeviceOrientation(e) {
     if (![e.alpha, e.beta, e.gamma].every(Number.isFinite)) return;
@@ -238,8 +263,17 @@ export function createPoseController({ onExternalRecenter } = {}) {
         dragPitch = T.MathUtils.clamp(dragPitch - dy * 0.0026, -0.75, 0.55);
       }
     },
+    setPreferredOrientation(pref = 'auto') {
+      try {
+        return Boolean(window.MetaTourWebAR?.setPreferredOrientation?.(pref));
+      } catch {
+        return false;
+      }
+    },
     stats: () => ({
       containerMode: detectContainerMode(),
+      containerVersion: window.MetaTourWebAR?.version || null,
+      screenAngle: screenAngle(),
       source: nativePoseActive ? 'metatour-native-60hz' : gyroActive ? 'device-orientation' : 'touch-mouse-drag',
       nativePoseActive,
       nativePoseSource,
