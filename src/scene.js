@@ -407,25 +407,121 @@ export function createSlashArc(worldRoot) {
 
   return {
     group: slash,
-    update(camera, slashTime, slashHeavy, active) {
+    update(camera, slashTime, slashHeavy, active, slashDir = 'right') {
       slash.visible = active && slashTime > 0;
       if (!slash.visible) return;
       camera.getWorldPosition(worldPos);
       camera.getWorldDirection(forward);
-      worldPos.addScaledVector(forward, 1.15);
+      worldPos.addScaledVector(forward, slashDir === 'thrust' ? 1.38 : 1.15);
       worldRoot.worldToLocal(worldPos);
       slash.position.copy(worldPos);
 
       worldRoot.getWorldQuaternion(invRootQuat).invert();
       camera.getWorldQuaternion(localQuat).premultiply(invRootQuat);
-      const t = 1 - slashTime / 0.25;
-      rollQuat.setFromAxisAngle(zAxis, -0.5 + t * 1.8);
+      const duration = slashDir?.startsWith('spin') ? 0.38 : 0.25;
+      const t = clamp(1 - slashTime / duration, 0, 1);
+
+      let baseAngle = -0.5;
+      let sweep = 1.8;
+      if (slashDir === 'left') {
+        baseAngle = 2.64;
+        sweep = -1.85;
+      } else if (slashDir === 'up') {
+        baseAngle = -2.05;
+        sweep = 1.75;
+      } else if (slashDir === 'down') {
+        baseAngle = 1.05;
+        sweep = -1.75;
+      } else if (slashDir === 'spin-cw') {
+        baseAngle = 0;
+        sweep = -Math.PI * 2.2;
+      } else if (slashDir === 'spin-ccw') {
+        baseAngle = 0;
+        sweep = Math.PI * 2.2;
+      } else if (slashDir === 'thrust') {
+        baseAngle = -0.15;
+        sweep = 0.9;
+      }
+      rollQuat.setFromAxisAngle(zAxis, baseAngle + t * sweep);
       localQuat.multiply(rollQuat);
       slash.quaternion.copy(localQuat);
-      slash.scale.setScalar(slashHeavy ? 1.22 : 0.96);
-      for (const m of slash.children) {
-        m.material.opacity = (1 - t) * 0.85;
+      const scaleBase = slashDir?.startsWith('spin')
+        ? 1.34
+        : slashDir === 'thrust'
+          ? 0.72 + t * 0.62
+          : slashHeavy
+            ? 1.22
+            : 0.96;
+      slash.scale.setScalar(scaleBase);
+      for (let i = 0; i < slash.children.length; i++) {
+        const m = slash.children[i];
+        m.material.color.set(
+          slashDir?.startsWith('spin') ? (i === 0 ? '#ffffff' : '#55e7ff') : i === 0 ? '#e5ffff' : '#7ddfe8',
+        );
+        m.material.opacity = (1 - t) * 0.88;
       }
+    },
+  };
+}
+
+// 3D Water Breathing Guard Barrier ('fist-hold' / 'hold' in AR Glasses & Shift on Desktop)
+// Mounted strictly under worldRoot (camera.children.length === 0).
+export function createGuardShield(worldRoot) {
+  const group = new T.Group();
+  group.visible = false;
+  worldRoot.add(group);
+
+  const outerRing = new T.Mesh(
+    new T.RingGeometry(0.26, 0.274, 56),
+    new T.MeshBasicMaterial({
+      color: '#6ff3ff',
+      transparent: true,
+      opacity: 0.48,
+      side: T.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+      blending: T.AdditiveBlending,
+    }),
+  );
+  const innerRing = new T.Mesh(
+    new T.RingGeometry(0.165, 0.176, 6),
+    new T.MeshBasicMaterial({
+      color: '#bdfbff',
+      transparent: true,
+      opacity: 0.44,
+      side: T.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+      blending: T.AdditiveBlending,
+    }),
+  );
+  group.add(outerRing, innerRing);
+
+  const worldPos = new T.Vector3();
+  const forward = new T.Vector3();
+  const invRootQuat = new T.Quaternion();
+  const localQuat = new T.Quaternion();
+
+  return {
+    group,
+    update(camera, active, nowSec) {
+      group.visible = Boolean(active);
+      if (!group.visible) return;
+      camera.getWorldPosition(worldPos);
+      camera.getWorldDirection(forward);
+      worldPos.addScaledVector(forward, 1.32);
+      worldPos.y -= 0.19;
+      worldRoot.worldToLocal(worldPos);
+      group.position.copy(worldPos);
+
+      worldRoot.getWorldQuaternion(invRootQuat).invert();
+      camera.getWorldQuaternion(localQuat).premultiply(invRootQuat);
+      group.quaternion.copy(localQuat);
+
+      outerRing.rotation.z = nowSec * 1.8;
+      innerRing.rotation.z = -nowSec * 2.4;
+      const pulse = 0.96 + Math.sin(nowSec * 6) * 0.05;
+      group.scale.setScalar(pulse);
     },
   };
 }

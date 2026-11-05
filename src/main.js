@@ -5,7 +5,14 @@ import { createEffects } from './effects.js';
 import { createEnemyView } from './enemies.js';
 import { createBattle, REACH, BOSS_AT } from './simulation.js';
 import { formationStats } from './formation.js';
-import { createCourtyard, createAlly, createSlashArc, createWarnings, createContactShadows } from './scene.js';
+import {
+  createCourtyard,
+  createAlly,
+  createSlashArc,
+  createGuardShield,
+  createWarnings,
+  createContactShadows,
+} from './scene.js';
 import { createWorldPlaque } from './world-plaque.js';
 import {
   detectGlassesMode,
@@ -13,6 +20,7 @@ import {
   createRearCamera,
   createGlassesBridge,
   createMegaAnchorBridge,
+  createSpatialInputBridge,
 } from './container-bridge.js';
 
 const $ = sel => document.querySelector(sel);
@@ -90,7 +98,9 @@ worldRoot.add(dirLight);
 
 let ally = null;
 let assetsReady = false;
-let mode = isGlasses ? 'battle' : 'welcome';
+let pendingGlassesStart = false;
+// In AR Glasses mode, Phase A opens on the 3D Spatial Welcome Plaque + 3D Gaze-Dwell Button (2.14m ahead, 0% 2D DOM)!
+let mode = 'welcome';
 let cameraActive = false;
 let battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
 
@@ -99,11 +109,8 @@ function syncViewportSize() {
   const width = Math.max(1, window.innerWidth);
   const height = Math.max(1, window.innerHeight);
   renderer.setSize(width, height, false);
-  // Slightly wider vertical FOV on narrow portrait phones so the 1.44m stage at z=-2.2m fits with generous margin.
   camera.aspect = width / height;
   camera.fov = width < height ? 58 : 48;
-  // On the Welcome screen, shift the optical frustum into the open half of the viewport
-  // (right half on desktop/landscape, upper half on portrait) so Tanjiro & the Wisteria torii are never occluded by the card.
   if (!isGlasses && mode === 'welcome') {
     if (width > height && width >= 560) {
       camera.setViewOffset(width, height, -Math.round(width * 0.21), 0, width, height);
@@ -148,6 +155,7 @@ const effects = createEffects(worldRoot);
 const warnings = createWarnings(worldRoot);
 const shadows = createContactShadows(worldRoot);
 const slashArc = createSlashArc(worldRoot);
+const guardShield = createGuardShield(worldRoot);
 const audio = createAudio();
 audio.preload();
 
@@ -166,16 +174,33 @@ let messageUntil = 0;
 let hurtFlash = 0;
 let slashTime = 0;
 let slashHeavy = false;
+let slashDir = 'right';
 let lightHeld = false;
 let heavyHeld = false;
 let dragState = null;
-let gazeHoldSec = 0;
 let xrBaselineHeadX = null;
+let battleEnteredAtMs = -10000;
+
+// Sticky Gaze Lock & 3D Spatial Menu Dwell state:
+let lockedEnemyId = null;
+let gazeOnLocked = false;
+let hoveredMenuId = null;
+let menuProgress = 0;
+let localMenuDwellSec = 0;
+let gestureHint = '';
+let gestureHintUntil = 0;
 
 const direction = new T.Vector3();
 const camWorldPos = new T.Vector3();
 const tempPoint = new T.Vector3();
 const targetQuat = new T.Quaternion();
+const gazeRay = new T.Raycaster();
+const tapNdc = new T.Vector2();
+
+function setGestureHint(label, durationSec = 1.8) {
+  gestureHint = label;
+  gestureHintUntil = performance.now() + durationSec * 1000;
+}
 
 function syncBackdropVisibility(isCameraOn) {
   cameraActive = Boolean(isCameraOn && !isGlasses);
@@ -213,28 +238,212 @@ function syncSoundButton() {
 }
 syncSoundButton();
 
-function findAimTarget(activeCam) {
-  activeCam.getWorldPosition(camWorldPos);
-  activeCam.getWorldDirection(direction);
-  let bestTarget = null;
-  let bestDot = 0.87;
+// Zero-Latency Sticky Gaze Lock:
+// - Sweeping gaze across any alive demon immediately sets lockedEnemyId (0ms dwell wait).
+// - Turning gaze away to empty space NEVER clears lockedEnemyId as long as that demon has hp > 0.
+// - When the locked demon dies, automatically transfers lock to the nearest alive demon in range.
+function findGazeHitEnemy(rayOrigin, rayDir) {
+  let bestEnemy = null;
+  let bestScore = 1.0;
   for (const e of battle.enemies) {
     if (e.hp <= 0) continue;
-    tempPoint.set(e.x, 1.05 * e.size, e.z).sub(camWorldPos);
-    const dist = tempPoint.length();
-    if (dist > REACH + 0.8) continue;
-    const dot = tempPoint.normalize().dot(direction);
-    if (dot > bestDot) {
-      bestDot = dot;
-      bestTarget = e;
+    // Capsule-segment gaze check across full demon stature [0.55*size .. 1.62*size]
+    // so looking at either the demon's head (1.55m eye level in XREAL local-floor) or torso locks immediately:
+    tempPoint.set(e.x, 1.1 * e.size, e.z).applyMatrix4(worldRoot.matrixWorld);
+    const baseWorldY = tempPoint.y - 1.1 * e.size;
+    const dx = tempPoint.x - rayOrigin.x;
+    const dz = tempPoint.z - rayOrigin.z;
+    const approxAlong = dx * rayDir.x + (tempPoint.y - rayOrigin.y) * rayDir.y + dz * rayDir.z;
+    if (approxAlong <= 0.35 || approxAlong > REACH + 3.6) continue;
+    const rayYAtDepth = rayOrigin.y + rayDir.y * approxAlong;
+    const clampedY = T.MathUtils.clamp(rayYAtDepth, baseWorldY + 0.5 * e.size, baseWorldY + 1.65 * e.size);
+    tempPoint.y = clampedY;
+    tempPoint.sub(rayOrigin);
+    const along = tempPoint.dot(rayDir);
+    if (along <= 0.35 || along > REACH + 3.6) continue;
+    const perpSq = Math.max(0, tempPoint.lengthSq() - along * along);
+    const perp = Math.sqrt(perpSq);
+    const hitRadius = e.boss ? 0.76 : 0.6;
+    const ratio = perp / hitRadius;
+    if (ratio <= 1.0 && ratio < bestScore) {
+      bestScore = ratio;
+      bestEnemy = e;
     }
   }
-  return bestTarget;
+  return bestEnemy;
 }
 
-function triggerAttack(kind) {
-  const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-  return battle.attack(kind, findAimTarget(activeCam)?.id);
+function nearestAliveEnemy() {
+  return (
+    battle.enemies
+      .filter(e => e.hp > 0 && Math.hypot(e.x - battle.player.x, e.z - battle.player.z) <= REACH + 3.2)
+      .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0] || null
+  );
+}
+
+function resolveLockedEnemy() {
+  if (lockedEnemyId == null) return null;
+  return battle.enemies.find(e => e.id === lockedEnemyId && e.hp > 0) || null;
+}
+
+function getCombatTargetId() {
+  const locked = resolveLockedEnemy();
+  if (locked) return locked.id;
+  const fallback = nearestAliveEnemy();
+  if (fallback) {
+    lockedEnemyId = fallback.id;
+    return fallback.id;
+  }
+  return null;
+}
+
+function triggerAttack(kind, opts = {}) {
+  return battle.attack(kind, getCombatTargetId(), opts);
+}
+
+function enterBattleOrQueue() {
+  if (!assetsReady) {
+    pendingGlassesStart = true;
+    return false;
+  }
+  enterBattle();
+  return true;
+}
+
+// v1.5.0 Decoupled Spatial Input Bridge (Air Gestures + Blind Trackpad + Floating Steering + 2s Gaze Dwell):
+const spatialInput = createSpatialInputBridge({
+  isGlasses,
+  isMenuPhase: () => mode === 'welcome' || mode === 'result',
+  onSlash({ direction: dir, source }) {
+    if (mode !== 'battle') return;
+    audio.unlock();
+    const labelMap = { left: '左挥斩', right: '右挥斩', up: '上挑斩', down: '下劈斩' };
+    setGestureHint(`【${source.startsWith('hand') ? '手势' : '盲操'}】${labelMap[dir] || '拔刀普攻'}`);
+    triggerAttack('light', { slashDir: dir || 'right' });
+    flushBattleEvents();
+  },
+  onWaterWheel({ clockwise }) {
+    if (mode !== 'battle') return;
+    audio.unlock();
+    setGestureHint(`【贰之型·水车】${clockwise ? '顺时针旋斩' : '逆时针旋斩'}`);
+    battle.castWaterWheel(getCombatTargetId(), clockwise);
+    flushBattleEvents();
+  },
+  onThrust({ direction: latDir }) {
+    if (mode !== 'battle') return;
+    audio.unlock();
+    setGestureHint('【柒之型·雫波纹击刺】突进破招');
+    battle.castThrust(getCombatTargetId(), latDir || null);
+    flushBattleEvents();
+  },
+  onGuardChange(active) {
+    if (mode !== 'battle') {
+      battle.setGuard(false);
+      return;
+    }
+    audio.unlock();
+    if (active) setGestureHint('【流流舞·守势】握拳架刀弹反中', 2.4);
+    battle.setGuard(active);
+    flushBattleEvents();
+  },
+  onUltimate() {
+    if (mode !== 'battle') return;
+    audio.unlock();
+    setGestureHint('【全集中奥义】水之呼吸·水车合击！', 2.6);
+    battle.castUltimate(getCombatTargetId());
+    flushBattleEvents();
+  },
+  onPinch({ source }) {
+    audio.unlock();
+    if (mode === 'welcome' || mode === 'result') {
+      const targetMenu = hoveredMenuId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle';
+      spatialInput.markMenuConfirmed(targetMenu, source);
+      return;
+    }
+    if (mode === 'battle') {
+      setGestureHint('【拔刀连斩】隔空触发');
+      triggerAttack('light', { slashDir: 'right' });
+      flushBattleEvents();
+    }
+  },
+  onMoveAxes({ x, y, active }) {
+    battle.setMoveAxes(x, y, active);
+  },
+  onMenuProgress({ targetId, progress }) {
+    if (targetId && targetId === hoveredMenuId) {
+      menuProgress = progress;
+    } else if (!targetId) {
+      menuProgress = 0;
+    }
+  },
+  onMenuSelect() {
+    audio.unlock();
+    enterBattleOrQueue();
+  },
+});
+
+function updateStickyGazeAndMenu(activeCam, dt) {
+  worldRoot.updateMatrixWorld(true);
+  activeCam.getWorldPosition(camWorldPos);
+  activeCam.getWorldDirection(direction);
+
+  // Phase A (Welcome / Result in AR Glasses): Raycast ONLY 3D Spatial Menu Button for 2s Gaze Dwell!
+  const activeMenuId = worldPlaque.getActiveMenuId(mode);
+  if (isGlasses && activeMenuId && worldPlaque.menuGroup.visible) {
+    gazeRay.set(camWorldPos, direction);
+    const hit = gazeRay.intersectObject(worldPlaque.menuHitMesh, false)[0] || null;
+    hoveredMenuId = hit ? activeMenuId : null;
+    const hostHandlesDwell = spatialInput.setReticleTarget(hoveredMenuId);
+    if (!hostHandlesDwell) {
+      if (hoveredMenuId && assetsReady) {
+        localMenuDwellSec += dt;
+        menuProgress = Math.min(1, localMenuDwellSec / 2.0);
+        if (menuProgress >= 1) {
+          localMenuDwellSec = 0;
+          menuProgress = 0;
+          spatialInput.markMenuConfirmed(hoveredMenuId, 'local-gaze-dwell');
+        }
+      } else {
+        localMenuDwellSec = 0;
+        menuProgress = 0;
+      }
+    } else if (!hoveredMenuId) {
+      menuProgress = 0;
+    }
+    return null;
+  }
+
+  // Phase B (Battle): Never run Gaze Dwell timer on enemies! Zero-latency Sticky Gaze Lock:
+  hoveredMenuId = null;
+  menuProgress = 0;
+  localMenuDwellSec = 0;
+  if (isGlasses) {
+    spatialInput.setReticleTarget(null);
+  }
+
+  if (mode !== 'battle') return null;
+
+  const hitEnemy = findGazeHitEnemy(camWorldPos, direction);
+  if (hitEnemy) {
+    lockedEnemyId = hitEnemy.id;
+    gazeOnLocked = true;
+    return hitEnemy;
+  }
+
+  gazeOnLocked = false;
+  const stillLocked = resolveLockedEnemy();
+  if (stillLocked) {
+    // Sticky retention: head moved away to empty space, keep last locked alive demon!
+    return stillLocked;
+  }
+
+  // Previous locked demon died -> auto-transfer lock to nearest alive demon if one was previously locked:
+  if (lockedEnemyId !== null) {
+    const nextAlive = nearestAliveEnemy();
+    lockedEnemyId = nextAlive ? nextAlive.id : null;
+    return nextAlive;
+  }
+  return null;
 }
 
 function flushBattleEvents() {
@@ -242,9 +451,18 @@ function flushBattleEvents() {
     audio.event(e);
     if (e.type === 'message') showMessage(e.text, e.duration);
     if (e.type === 'playerSlash') {
-      slashTime = 0.25;
+      slashDir = e.slashDir || 'right';
+      slashTime = slashDir.startsWith('spin') ? 0.38 : 0.25;
       slashHeavy = !!(e.heavy || e.finisher);
       navigator.vibrate?.(slashHeavy ? 18 : 8);
+    }
+    if (e.type === 'waterWheelSpin') {
+      effects.ring(0, -2.05, true);
+    }
+    if (e.type === 'parry') {
+      hurtFlash = 0;
+      effects.ring(battle.player.x, -1.45, false);
+      navigator.vibrate?.(14);
     }
     if (e.type === 'hit') effects.burst(e.x, e.y, e.z, e.dead ? 18 : 9, e.dead);
     if (e.type === 'hurt') {
@@ -268,6 +486,11 @@ function flushBattleEvents() {
       mode = 'result';
       lightHeld = false;
       heavyHeld = false;
+      lockedEnemyId = null;
+      gazeOnLocked = false;
+      hoveredMenuId = null;
+      menuProgress = 0;
+      localMenuDwellSec = 0;
       if (!isGlasses) {
         $('#technique').hidden = true;
         $('#hud').hidden = true;
@@ -293,7 +516,13 @@ function enterBattle() {
   warnings.clear();
   ally?.reset(battle.ally);
   mode = 'battle';
-  gazeHoldSec = 0;
+  battleEnteredAtMs = performance.now();
+  lockedEnemyId = null;
+  gazeOnLocked = false;
+  hoveredMenuId = null;
+  menuProgress = 0;
+  localMenuDwellSec = 0;
+  spatialInput.setReticleTarget(null);
   syncViewportSize();
   if (!isGlasses) {
     $('#welcome').hidden = true;
@@ -309,7 +538,7 @@ function enterBattle() {
   flushBattleEvents();
 }
 
-// Step 4: AR Glasses Auto WebXR Session Startup (immersive-vr + local-floor)
+// Step 4: AR Glasses Auto WebXR Session Startup (immersive-vr + local-floor + hand-tracking)
 async function startGlassesWebXRSession() {
   if (!isGlasses || diagnostics.xrSessionActive) return false;
   if (!navigator.xr?.requestSession) {
@@ -318,35 +547,51 @@ async function startGlassesWebXRSession() {
   }
   try {
     const session = await navigator.xr.requestSession('immersive-vr', {
-      optionalFeatures: ['local-floor'],
+      optionalFeatures: ['local-floor', 'hand-tracking'],
     });
     diagnostics.xrSessionActive = true;
     diagnostics.xrError = null;
     session.addEventListener('end', () => {
       diagnostics.xrSessionActive = false;
       xrBaselineHeadX = null;
+      battle.setGuard(false);
     });
     session.addEventListener('select', () => {
       audio.unlock();
-      if (mode === 'result') {
-        enterBattle();
+      // Guard against MetaTourWebAR's 2s Gaze-Dwell select event firing an accidental slash on frame 1 of battle:
+      if (
+        spatialInput.lastMenuConfirmAgeMs() < 550 ||
+        performance.now() - battleEnteredAtMs < 480
+      ) {
         return;
       }
-      if (battle.energy >= 100) triggerAttack('musou');
-      else triggerAttack('light');
-      flushBattleEvents();
+      if (mode === 'welcome' || mode === 'result') {
+        const targetMenu = hoveredMenuId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle';
+        spatialInput.markMenuConfirmed(targetMenu, 'xr-select');
+        return;
+      }
+      if (mode === 'battle') {
+        const caps = spatialInput.getCapabilities();
+        const st = spatialInput.getInputState();
+        if (!(caps.handTracking && st?.handActive)) {
+          triggerAttack('light', { slashDir: 'right' });
+          flushBattleEvents();
+        }
+      }
     });
-    session.addEventListener('squeeze', () => {
+    session.addEventListener('squeezestart', () => {
       audio.unlock();
       if (mode === 'battle') {
-        triggerAttack('heavy');
+        battle.setGuard(true);
         flushBattleEvents();
       }
+    });
+    session.addEventListener('squeezeend', () => {
+      battle.setGuard(false);
     });
     await renderer.xr.setSession(session);
     return true;
   } catch (err) {
-    // Some desktop test browsers block auto-requestSession until user activation; retry silently on first tap.
     diagnostics.xrError = err?.message || String(err);
     return false;
   }
@@ -359,10 +604,11 @@ if (isGlasses) {
     () => {
       audio.unlock();
       if (!diagnostics.xrSessionActive) startGlassesWebXRSession();
-      else if (mode === 'result') enterBattle();
-      else if (mode === 'battle') {
-        if (battle.energy >= 100) triggerAttack('musou');
-        else triggerAttack('light');
+      if (window.MetaTourWebAR) return; // In native MetaTour container, ControlPadView / Hand / Gaze handle input
+      if (mode === 'welcome' || mode === 'result') {
+        spatialInput.markMenuConfirmed(worldPlaque.getActiveMenuId(mode) || 'btn-start-battle', 'pointer');
+      } else if (mode === 'battle') {
+        triggerAttack('light', { slashDir: 'right' });
         flushBattleEvents();
       }
     },
@@ -374,7 +620,7 @@ if (isGlasses) {
 if (!isGlasses) {
   const syncHandheldContainerHint = () => {
     if (poseCtrl.stats().containerMode === 'handheld') {
-      $('#pose-hint').textContent = '已接入元游 WebAR 浏览器 60Hz 原生姿态 · 转动手机或拖动即可环视';
+      $('#pose-hint').textContent = '已接入元游 WebAR 全屏 60Hz 原生姿态 · 转动手机或拖动即可环视';
     }
   };
   syncHandheldContainerHint();
@@ -429,6 +675,7 @@ if (!isGlasses) {
     if (mode !== 'battle') return;
     mode = 'paused';
     battle.status = 'paused';
+    battle.setGuard(false);
     lightHeld = false;
     heavyHeld = false;
     audio.pause();
@@ -473,6 +720,8 @@ if (!isGlasses) {
     battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
     ally?.reset(battle.ally);
     mode = 'welcome';
+    lockedEnemyId = null;
+    gazeOnLocked = false;
     syncViewportSize();
     $('#hud').hidden = true;
     $('#pause-menu').hidden = true;
@@ -508,7 +757,7 @@ if (!isGlasses) {
     '#light',
     () => {
       lightHeld = true;
-      triggerAttack('light');
+      triggerAttack('light', { slashDir: 'right' });
       flushBattleEvents();
     },
     () => {
@@ -519,7 +768,7 @@ if (!isGlasses) {
     '#heavy',
     () => {
       heavyHeld = true;
-      triggerAttack('heavy');
+      triggerAttack('heavy', { slashDir: 'thrust' });
       flushBattleEvents();
     },
     () => {
@@ -539,17 +788,29 @@ if (!isGlasses) {
     flushBattleEvents();
   });
 
-  // Mouse & touch drag works immediately on first screen (#welcome) AND in battle!
+  // Mouse & touch drag works immediately on #welcome AND in battle; quick tap on an enemy locks it!
   canvas.addEventListener('pointerdown', e => {
-    dragState = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    dragState = { id: e.pointerId, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY };
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', e => {
     if (!dragState || dragState.id !== e.pointerId) return;
     poseCtrl.drag(e.clientX - dragState.x, e.clientY - dragState.y);
-    dragState = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    dragState.x = e.clientX;
+    dragState.y = e.clientY;
   });
-  canvas.addEventListener('pointerup', () => {
+  canvas.addEventListener('pointerup', e => {
+    if (dragState && dragState.id === e.pointerId && mode === 'battle') {
+      const moved = Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY);
+      if (moved < 12) {
+        tapNdc.set((e.clientX / Math.max(1, window.innerWidth)) * 2 - 1, -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1);
+        gazeRay.setFromCamera(tapNdc, camera);
+        const tappedEnemy = findGazeHitEnemy(gazeRay.ray.origin, gazeRay.ray.direction);
+        if (tappedEnemy) {
+          lockedEnemyId = tappedEnemy.id;
+        }
+      }
+    }
     dragState = null;
   });
   canvas.addEventListener('pointercancel', () => {
@@ -557,7 +818,7 @@ if (!isGlasses) {
   });
 
   window.addEventListener('keydown', e => {
-    if ([' ', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
+    if ([' ', 'ArrowLeft', 'ArrowRight', 'Shift'].includes(e.key)) e.preventDefault();
     if (e.repeat) return;
     if (e.key === 'Escape') {
       if (mode === 'battle') $('#pause').click();
@@ -566,18 +827,26 @@ if (!isGlasses) {
     }
     if (mode !== 'battle') return;
     const k = e.key.toLowerCase();
-    if (k === 'j') {
-      lightHeld = true;
-      triggerAttack('light');
+    if (k === 'j' || e.key === ' ') {
+      lightHeld = k === 'j';
+      triggerAttack('light', { slashDir: 'right' });
       flushBattleEvents();
     }
-    if (k === 'k') {
-      heavyHeld = true;
-      triggerAttack('heavy');
+    if (k === 'k' || e.key === '2') {
+      if (k === 'k') heavyHeld = true;
+      battle.castThrust(getCombatTargetId());
       flushBattleEvents();
     }
-    if (k === 'i' || e.key === ' ') {
-      triggerAttack('musou');
+    if (e.key === '1') {
+      battle.castWaterWheel(getCombatTargetId(), true);
+      flushBattleEvents();
+    }
+    if (e.key === '3' || k === 'i') {
+      battle.castUltimate(getCombatTargetId());
+      flushBattleEvents();
+    }
+    if (e.key === 'Shift') {
+      battle.setGuard(true);
       flushBattleEvents();
     }
     if (e.key === 'ArrowLeft' || k === 'a') {
@@ -593,6 +862,7 @@ if (!isGlasses) {
     const k = e.key.toLowerCase();
     if (k === 'j') lightHeld = false;
     if (k === 'k') heavyHeld = false;
+    if (e.key === 'Shift') battle.setGuard(false);
   });
 }
 
@@ -665,7 +935,7 @@ renderer.setAnimationLoop(now => {
   const activeCamera = xrPresenting ? renderer.xr.getCamera() : camera;
 
   if (!xrPresenting) {
-    camera.position.set(battle.player.x, 1.38, 0);
+    camera.position.set(battle.player.x, 1.38, battle.player.z || 0);
     targetQuat.copy(poseCtrl.getQuaternion());
     camera.quaternion.slerp(targetQuat, 1 - Math.exp(-dt * 22));
     camera.updateMatrixWorld(true);
@@ -686,32 +956,25 @@ renderer.setAnimationLoop(now => {
 
   megaBridge.update();
 
-  const aimTarget = findAimTarget(activeCamera);
+  if (gestureHint && now > gestureHintUntil) {
+    gestureHint = '';
+  }
+
+  const lockedTarget = updateStickyGazeAndMenu(activeCamera, dt);
 
   if (mode === 'battle' && assetsReady) {
-    // In AR Glasses mode, gaze-lock auto-chains slashes so hands-free optical viewing is effortless.
-    if (isGlasses && aimTarget) {
-      gazeHoldSec += dt;
-      if (gazeHoldSec >= 0.22) {
-        if (battle.energy >= 100) triggerAttack('musou');
-        else triggerAttack('light');
-      }
-    } else {
-      gazeHoldSec = 0;
-    }
-
     accumulator += dt;
     let steps = 0;
     while (accumulator >= 1 / 60 && steps++ < 5 && mode === 'battle') {
-      if (heavyHeld) triggerAttack('heavy');
-      if (lightHeld) triggerAttack('light');
+      if (heavyHeld) triggerAttack('heavy', { slashDir: 'thrust' });
+      if (lightHeld) triggerAttack('light', { slashDir: 'right' });
       battle.step(1 / 60, ally.travelAt);
       flushBattleEvents();
       ally.update(1 / 60, battle);
       effects.update(1 / 60, effectState());
       accumulator -= 1 / 60;
     }
-    updateHud(aimTarget);
+    updateHud(lockedTarget);
   } else {
     accumulator = 0;
     if (assetsReady) {
@@ -727,7 +990,8 @@ renderer.setAnimationLoop(now => {
   if (!isGlasses) $('#hit-flash').style.opacity = String(hurtFlash * 1.5);
 
   slashTime = Math.max(0, slashTime - dt);
-  slashArc.update(activeCamera, slashTime, slashHeavy, mode === 'battle');
+  slashArc.update(activeCamera, slashTime, slashHeavy, mode === 'battle', slashDir);
+  guardShield.update(activeCamera, mode === 'battle' && battle.guarding, now * 0.001);
 
   courtyard.update(now * 0.001, battle.status === 'victory' ? 1 : 0);
   warnings.update(mode === 'battle' ? battle : { hazards: [], time: 0, player: battle.player });
@@ -735,11 +999,18 @@ renderer.setAnimationLoop(now => {
   shadows.update(mode === 'battle' ? battle.enemies : [], ally?.actor);
   worldPlaque.update({
     mode,
+    assetsReady,
     battle,
-    target: aimTarget,
+    lockedTarget,
+    gazeOnTarget: gazeOnLocked,
+    hoveredMenuId,
+    menuProgress,
+    gestureHint,
+    handTracking: Boolean(spatialInput.getCapabilities().handTracking),
     camera: activeCamera,
     xrSessionActive: diagnostics.xrSessionActive || xrPresenting,
     megaSynced: megaBridge.stats().anchorCount > 0,
+    nowSec: now * 0.001,
   });
 
   renderer.render(scene, camera);
@@ -763,7 +1034,10 @@ Promise.all([
     ally.reset(battle.ally);
     ally.actor.visible = true;
     if (isGlasses) {
-      enterBattle();
+      if (pendingGlassesStart) {
+        pendingGlassesStart = false;
+        enterBattle();
+      }
     } else {
       $('#load-status').textContent = '炭治郎与藤花结界已就绪 · 选择后置相机 AR 或直接 3D 试玩';
     }
@@ -775,11 +1049,18 @@ Promise.all([
     }
   });
 
-// Read-only diagnostics & EasyAR Mega spatial anchor hook:
+// Read-only diagnostics, v1.5.0 Spatial Input test hooks & EasyAR Mega spatial anchor hook:
 window.__webar = {
   applyMegaPose: pose => megaBridge.applyMegaPose(pose),
   recenter: () => poseCtrl.recenter(),
   checkGlasses: () => glassesBridge.check(),
+  spatialInput: {
+    simulateHandGesture: ev => spatialInput.simulateHandGesture(ev),
+    simulateTrackpadGesture: ev => spatialInput.simulateTrackpadGesture(ev),
+    simulateTrackpadMove: ev => spatialInput.simulateTrackpadMove(ev),
+    simulateGazeSelect: id => spatialInput.simulateGazeSelect(id),
+    stats: () => spatialInput.stats(),
+  },
   snapshot: () => ({
     threeRevision: T.REVISION,
     isGlasses,
@@ -794,18 +1075,28 @@ window.__webar = {
     clearColorHex: `#${renderer.getClearColor(new T.Color()).getHexString()}`,
     xrEnabled: renderer.xr.enabled,
     xrPresenting: renderer.xr.isPresenting,
+    lockedEnemyId,
+    gazeOnLocked,
+    hoveredMenuId,
+    menuProgress: Number(menuProgress.toFixed(3)),
     rearCamera: rearCamera.stats(),
     pose: poseCtrl.stats(),
     glassesBridge: glassesBridge.stats(),
     megaAnchor: megaBridge.stats(),
+    spatialInput: spatialInput.stats(),
     ally: ally?.stats() || null,
     enemies: enemyView.stats(),
     formation: formationStats(battle),
     battle: {
       status: battle.status,
       hp: battle.hp,
-      energy: battle.energy,
+      energy: Number(battle.energy.toFixed(1)),
       kills: battle.kills,
+      perfect: battle.perfect,
+      musouCount: battle.musouCount,
+      guarding: battle.guarding,
+      playerX: Number(battle.player.x.toFixed(3)),
+      playerZ: Number((battle.player.z || 0).toFixed(3)),
       progress: Number(battle.progress.toFixed(2)),
       enemyCount: battle.enemies.length,
     },

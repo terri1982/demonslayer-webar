@@ -59,6 +59,13 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     lightCd: 0,
     heavyCd: 0,
     dodgeCd: 0,
+    spinCd: 0,
+    thrustBurstCd: 0,
+    ultCd: 0,
+    guarding: false,
+    steerX: 0,
+    steerY: 0,
+    steerActive: false,
     swing: null,
     moveKey: null,
     chainKind: null,
@@ -178,13 +185,15 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     if (s) g.chainTimer = CHAIN_WINDOW;
   }
 
-  function attack(kind, targetId) {
+  function attack(kind, targetId, opts = {}) {
     if (g.status !== 'playing' || g.musouTime >= 0) return false;
+    if (g.guarding && kind !== 'musou') g.guarding = false;
     if (kind === 'musou') {
       if (g.energy < 100) {
         emit('message', { text: '命中恶鬼或完美闪避，积蓄水车合击', duration: 1.4 });
         return false;
       }
+      g.guarding = false;
       g.swing = null;
       g.moveKey = null;
       g.chainKind = null;
@@ -209,15 +218,120 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     }
     const key = kind + stageNo;
     const m = MOVES[key];
-    g.swing = { key, kind, clip: m.clip, speed: m.speed, time: 0, beat: 0, targetId: targetId ?? null };
+    const slashDir = opts.slashDir || (kind === 'heavy' ? 'thrust' : stageNo === 2 ? 'left' : 'right');
+    g.swing = { key, kind, clip: m.clip, speed: m.speed, time: 0, beat: 0, targetId: targetId ?? null, slashDir };
     g.moveKey = key;
     g.chainKind = kind;
     g.chainStage = stageNo;
     g.chainTimer = 1;
     if (kind === 'heavy' && stageNo === 1) g.heavyCd = 1.8;
-    emit('attack', { kind, key, stage: stageNo, clip: m.clip });
-    emit('swing', { heavy: !!m.heavy, finisher: !!m.finisher, key, clip: m.clip, stage: stageNo });
+    emit('attack', { kind, key, stage: stageNo, clip: m.clip, slashDir });
+    emit('swing', { heavy: !!m.heavy, finisher: !!m.finisher, key, clip: m.clip, stage: stageNo, slashDir });
     return true;
+  }
+
+  function findTargetOrNearest(targetId) {
+    let target =
+      targetId == null
+        ? null
+        : g.enemies.find(e => e.id === targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.2);
+    if (!target) {
+      target = g.enemies
+        .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.2)
+        .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
+    }
+    return target || null;
+  }
+
+  // Skill 1 (Air Gesture 'circle' / Trackpad 'swipe-up' / Key '1'): Water Wheel Spin / Full Musou
+  function castWaterWheel(targetId, clockwise = true) {
+    if (g.status !== 'playing' || g.musouTime >= 0) return false;
+    if (g.energy >= 100) {
+      return attack('musou', targetId);
+    }
+    if (g.spinCd > 0) return false;
+    g.guarding = false;
+    g.spinCd = 1.05;
+    g.invincible = Math.max(g.invincible, 0.36);
+    const targets = g.enemies.filter(
+      e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.2,
+    );
+    const primary = findTargetOrNearest(targetId);
+    if (targets.length > 0) {
+      for (const foe of targets) {
+        hurtEnemy(foe, foe.id === primary?.id ? 40 : 28, true, true, true);
+      }
+    }
+    g.energy = Math.min(100, g.energy + 14);
+    const slashDir = clockwise ? 'spin-cw' : 'spin-ccw';
+    emit('waterWheelSpin', { clockwise, hitCount: targets.length });
+    emit('allyAttack', { target: primary?.id ?? null });
+    emit('impact', { heavy: true, finisher: true, hit: targets.length > 0 });
+    emit('playerSlash', { heavy: true, finisher: true, stage: 3, slashDir });
+    emit('message', { text: '水之呼吸 · 贰之型 水车旋斩！', duration: 1.5 });
+    return true;
+  }
+
+  // Skill 2 (Air Gesture 'thrust' / Trackpad 'swipe-left'|'swipe-right' / Key '2'): Piercing Thrust
+  function castThrust(targetId, lateralDir = null) {
+    if (g.status !== 'playing' || g.musouTime >= 0) return false;
+    g.guarding = false;
+    if (lateralDir && g.hazards.some(h => h.remaining <= 0.7 && h.remaining > 0)) {
+      g.invincible = Math.max(g.invincible, 0.38);
+    }
+    if (attack('heavy', targetId, { slashDir: 'thrust' })) {
+      return true;
+    }
+    if (g.thrustBurstCd > 0) return false;
+    g.thrustBurstCd = 0.42;
+    const target = findTargetOrNearest(targetId);
+    if (target) {
+      hurtEnemy(target, 32, true, true, true);
+    }
+    emit('impact', { heavy: true, finisher: false, hit: !!target });
+    emit('playerSlash', { heavy: true, finisher: false, stage: 1, slashDir: 'thrust' });
+    emit('message', { text: '水之呼吸 · 柒之型 雫波纹击刺！', duration: 1.3 });
+    return true;
+  }
+
+  // Skill 3 (Air Gesture 'fist-hold' & 'fist-release' / Trackpad 'hold' / Key 'Shift'): Water Guard
+  function setGuard(active) {
+    const next = Boolean(active) && g.status === 'playing' && g.musouTime < 0;
+    if (next === g.guarding) return g.guarding;
+    g.guarding = next;
+    if (next) {
+      g.swing = null;
+      g.moveKey = null;
+      emit('guardStart');
+      emit('message', { text: '水之呼吸 · 流流舞 守势架刀（可弹反红光攻击）', duration: 1.5 });
+    } else {
+      emit('guardEnd');
+    }
+    return g.guarding;
+  }
+
+  // Skill 4 (Air Gesture 'open-palm' / Trackpad 'swipe-down' / Key '3'): Full-Concentration Ultimate
+  function castUltimate(targetId) {
+    if (g.status !== 'playing' || g.musouTime >= 0) return false;
+    if (g.energy < 100) {
+      if (g.ultCd > 0) {
+        emit('message', { text: `全集中呼吸回气中（${g.ultCd.toFixed(1)}s）`, duration: 1.2 });
+        return false;
+      }
+      g.energy = 100;
+      g.ultCd = 5.0;
+    }
+    return attack('musou', targetId);
+  }
+
+  // Left-Hand Blind Floating Steering Pad (onTrackpadMove: x/y in [-1, 1])
+  function setMoveAxes(x = 0, y = 0, active = false) {
+    g.steerActive = Boolean(active);
+    g.steerX = g.steerActive ? clamp(Number(x) || 0, -1, 1) : 0;
+    g.steerY = g.steerActive ? clamp(Number(y) || 0, -1, 1) : 0;
+    if (g.steerActive && Math.abs(g.steerX) > 0.62 && g.hazards.length > 0 && g.dodgeCd <= 0) {
+      dodge(g.steerX > 0 ? 1 : -1);
+    }
   }
 
   function resolveSwing(dt) {
@@ -233,15 +347,20 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
       let target =
         s.targetId == null
           ? null
-          : g.enemies.find(e => e.id === s.targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH);
+          : g.enemies.find(e => e.id === s.targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.0);
       if (!target) {
         target = g.enemies
-          .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH)
+          .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.0)
           .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
       }
       if (target) hurtEnemy(target, damage, !!m.heavy && last, true, pop);
       emit('impact', { heavy: !!m.heavy && last, finisher: !!m.finisher && last, hit: !!target });
-      emit('playerSlash', { heavy: !!m.heavy, finisher: !!m.finisher && last, stage: m.stage });
+      emit('playerSlash', {
+        heavy: !!m.heavy,
+        finisher: !!m.finisher && last,
+        stage: m.stage,
+        slashDir: s.slashDir || 'right',
+      });
     }
     if (s.time >= m.duration) endSwing();
   }
@@ -312,8 +431,21 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
   function step(dt, rootProgress) {
     if (g.status !== 'playing') return;
     g.time += dt;
-    for (const key of ['lightCd', 'heavyCd', 'dodgeCd', 'invincible', 'dodgeTime', 'allyCd']) {
+    for (const key of [
+      'lightCd',
+      'heavyCd',
+      'dodgeCd',
+      'spinCd',
+      'thrustBurstCd',
+      'ultCd',
+      'invincible',
+      'dodgeTime',
+      'allyCd',
+    ]) {
       g[key] = Math.max(0, g[key] - dt);
+    }
+    if (g.guarding && g.musouTime < 0) {
+      g.energy = Math.min(100, g.energy + dt * 9.5);
     }
     if (g.swing) {
       resolveSwing(dt);
@@ -324,7 +456,15 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
         g.chainKind = null;
       }
     }
-    g.player.x = g.dodgeTime > 0 ? Math.sin((g.dodgeTime / 0.48) * Math.PI) * 0.52 * g.dodgeDirection : 0;
+    if (g.dodgeTime > 0) {
+      g.player.x = Math.sin((g.dodgeTime / 0.48) * Math.PI) * 0.52 * g.dodgeDirection;
+    } else if (g.steerActive) {
+      g.player.x = clamp(g.player.x + g.steerX * dt * 1.65, -0.68, 0.68);
+      g.player.z = clamp(g.player.z - g.steerY * dt * 1.25, -0.52, 0.42);
+    } else {
+      g.player.x += (0 - g.player.x) * Math.min(1, dt * 6);
+      g.player.z += (0 - g.player.z) * Math.min(1, dt * 6);
+    }
 
     const close = g.enemies.some(e => e.hp > 0 && e.z > -4.8);
     const walkTarget = g.musouTime >= 0 ? 0 : g.bossSpawned && !g.bossDefeated ? 0.22 : close ? 0.38 : WALK_SPEED;
@@ -424,7 +564,18 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
           source.attackAt = g.time;
           source.attackUntil = g.time + 0.32;
         }
-        if (g.invincible <= 0) {
+        if (g.guarding) {
+          g.perfect++;
+          g.energy = Math.min(100, g.energy + 18);
+          g.invincible = Math.max(g.invincible, 0.35);
+          if (source && source.hp > 0) {
+            source.stun = Math.max(source.stun, 0.55);
+            source.flash = 0.14;
+          }
+          emit('parry', { source: h.source });
+          emit('perfect');
+          emit('message', { text: '水之呼吸 · 流流舞 弹反成功！水车 +18', duration: 1.3 });
+        } else if (g.invincible <= 0) {
           const damage = source?.boss ? 16 : 10;
           g.hp = Math.max(0, g.hp - damage);
           g.damageTaken += damage;
@@ -461,5 +612,16 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     else if (g.bossDefeated && g.musouTime < 0) finish(true);
   }
 
-  return Object.assign(g, { start, step, attack, dodge, stageView });
+  return Object.assign(g, {
+    start,
+    step,
+    attack,
+    dodge,
+    stageView,
+    castWaterWheel,
+    castThrust,
+    setGuard,
+    castUltimate,
+    setMoveAxes,
+  });
 }

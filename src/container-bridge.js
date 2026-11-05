@@ -558,3 +558,307 @@ export function createMegaAnchorBridge(worldRoot) {
     }),
   };
 }
+
+// 6. v1.5.0 Decoupled Spatial Input Bridge (Zero-Coupling Hardware Primitives):
+// Adapts MetaTourWebAR v1.5.0+ raw spatial primitives:
+//   - Right-hand 6 air gestures (onHandGesture: slash / circle / thrust / fist-hold / fist-release / open-palm / pinch)
+//   - 3DoF glasses blind-touch fallback (onTrackpadGesture: tap / swipe-up / swipe-left / swipe-right / swipe-down / hold)
+//   - Left-hand floating steering wheel (onTrackpadMove: { x, y, active } or { moveX, moveY, active })
+//   - 3D spatial menu 2s Gaze Dwell (setReticleTarget + onGazeProgress + onGazeSelect)
+export function createSpatialInputBridge({
+  isGlasses = false,
+  isMenuPhase = () => false,
+  onSlash,
+  onWaterWheel,
+  onThrust,
+  onGuardChange,
+  onUltimate,
+  onPinch,
+  onMoveAxes,
+  onMenuProgress,
+  onMenuSelect,
+} = {}) {
+  let boundHost = null;
+  let reticleTargetId = null;
+  let lastProgress = 0;
+  let lastProgressTargetId = null;
+  let lastMenuSelectAt = -10000;
+  let lastGestureSummary = '';
+  let handGestureCount = 0;
+  let trackpadGestureCount = 0;
+  let moveEventCount = 0;
+  let gazeSelectCount = 0;
+  let holdReleaseTimer = null;
+  const moveState = { x: 0, y: 0, active: false };
+  let latestInputState = null;
+
+  function nowMs() {
+    return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  }
+
+  function getCapabilities() {
+    const hostCaps = window.MetaTourWebAR?.getCapabilities?.();
+    if (hostCaps && typeof hostCaps === 'object') {
+      return hostCaps;
+    }
+    const mode = detectContainerMode();
+    return {
+      mode,
+      deviceModel: isGlasses ? 'AR Glasses' : mode === 'handheld' ? 'Phone' : 'Browser',
+      dof: isGlasses ? 6 : mode === 'handheld' ? 3 : 0,
+      handTracking: false,
+      gaze: isGlasses,
+      gazeInput: isGlasses,
+      gazeDwellMs: isGlasses ? 2000 : 0,
+      trackpad: isGlasses,
+      trackpadSteering: isGlasses,
+      rearCamera: !isGlasses,
+    };
+  }
+
+  function getInputState() {
+    const st = window.MetaTourWebAR?.getInputState?.();
+    if (st && typeof st === 'object') {
+      latestInputState = st;
+      return st;
+    }
+    return (
+      latestInputState || {
+        mode: detectContainerMode(),
+        handSupported: Boolean(getCapabilities().handTracking),
+        handActive: false,
+        handedness: 'right',
+        trackpadActive: moveState.active,
+        moveX: moveState.x,
+        moveY: moveState.y,
+        gazeDwellMs: getCapabilities().gazeDwellMs ?? (isGlasses ? 2000 : 0),
+        gazeTargetId: reticleTargetId,
+      }
+    );
+  }
+
+  function fireMenuSelectDedup(targetId, source = 'gaze-dwell') {
+    if (!targetId) return false;
+    const t = nowMs();
+    if (t - lastMenuSelectAt < 420) return false;
+    lastMenuSelectAt = t;
+    gazeSelectCount++;
+    lastGestureSummary = `${source}:${targetId}`;
+    onMenuSelect?.({ targetId, source });
+    return true;
+  }
+
+  function handleHandGesture(ev) {
+    if (!ev || typeof ev.type !== 'string') return;
+    tryBindHost();
+    handGestureCount++;
+    const type = ev.type;
+    const direction = ev.direction || 'right';
+    const clockwise = ev.clockwise !== false && ev.direction !== 'ccw';
+    lastGestureSummary = `hand:${type}${ev.direction ? `(${ev.direction})` : ''}`;
+
+    switch (type) {
+      case 'slash':
+        onSlash?.({ direction, speed: Number(ev.speed) || 0, source: 'hand-slash' });
+        break;
+      case 'circle':
+        onWaterWheel?.({ clockwise, source: 'hand-circle' });
+        break;
+      case 'thrust':
+        onThrust?.({ source: 'hand-thrust' });
+        break;
+      case 'fist-hold':
+        onGuardChange?.(true, 'hand-fist-hold');
+        break;
+      case 'fist-release':
+        onGuardChange?.(false, 'hand-fist-release');
+        break;
+      case 'open-palm':
+        onUltimate?.({ source: 'hand-open-palm' });
+        break;
+      case 'pinch':
+        onPinch?.({ source: 'hand-pinch' });
+        break;
+      default:
+        break;
+    }
+  }
+
+  function handleTrackpadGesture(ev) {
+    if (!ev || typeof ev.type !== 'string') return;
+    tryBindHost();
+    trackpadGestureCount++;
+    const type = ev.type;
+    lastGestureSummary = `trackpad:${type}`;
+
+    if (isMenuPhase()) {
+      if (type === 'tap') {
+        onPinch?.({ source: 'trackpad-tap' });
+      }
+      return;
+    }
+
+    // On 6DoF hand-tracking glasses (e.g. XREAL Air 2 Ultra), when the right hand is actively tracked
+    // in view, combat skills are controlled exclusively by right-hand air gestures while the left hand steers.
+    // When !caps.handTracking (3DoF glasses) OR right hand is lowered (!handActive), blind trackpad gestures engage seamlessly.
+    const caps = getCapabilities();
+    const st = getInputState();
+    if (caps.handTracking && st?.handActive) return;
+
+    if (type === 'tap') {
+      onSlash?.({ direction: 'right', speed: 1, source: 'trackpad-tap' });
+    } else if (type === 'swipe-up') {
+      onWaterWheel?.({ clockwise: true, source: 'trackpad-swipe-up' });
+    } else if (type === 'swipe-left' || type === 'swipe-right') {
+      onThrust?.({
+        direction: type === 'swipe-left' ? 'left' : 'right',
+        source: `trackpad-${type}`,
+      });
+    } else if (type === 'swipe-down') {
+      onUltimate?.({ source: 'trackpad-swipe-down' });
+    } else if (type === 'hold') {
+      onGuardChange?.(true, 'trackpad-hold');
+      if (holdReleaseTimer) window.clearTimeout(holdReleaseTimer);
+      holdReleaseTimer = window.setTimeout(() => {
+        holdReleaseTimer = null;
+        onGuardChange?.(false, 'trackpad-hold-End');
+      }, 950);
+    }
+  }
+
+  function handleTrackpadMove(m) {
+    if (!m || typeof m !== 'object') return;
+    moveEventCount++;
+    const active = Boolean(m.active);
+    const rawX = Number(m.x ?? m.moveX) || 0;
+    const rawY = Number(m.y ?? m.moveY) || 0;
+    moveState.active = active;
+    moveState.x = active ? T.MathUtils.clamp(rawX, -1, 1) : 0;
+    moveState.y = active ? T.MathUtils.clamp(rawY, -1, 1) : 0;
+    onMoveAxes?.({ x: moveState.x, y: moveState.y, active: moveState.active });
+  }
+
+  function handleGazeProgress(ev) {
+    if (!ev || typeof ev !== 'object') return;
+    const targetId = ev.targetId ?? null;
+    const progress = T.MathUtils.clamp(Number(ev.progress) || 0, 0, 1);
+    lastProgressTargetId = targetId;
+    lastProgress = progress;
+    onMenuProgress?.({ targetId, progress, triggered: Boolean(ev.triggered) });
+    if (ev.triggered && targetId) {
+      fireMenuSelectDedup(targetId, 'gaze-progress-triggered');
+    }
+  }
+
+  function handleGazeSelect(ev) {
+    const targetId = ev?.targetId ?? reticleTargetId;
+    if (targetId) {
+      fireMenuSelectDedup(targetId, 'gaze-select');
+    }
+  }
+
+  function tryBindHost() {
+    const host = window.MetaTourWebAR;
+    if (!host || host === boundHost) return Boolean(boundHost);
+    boundHost = host;
+    try {
+      host.onInputStateChange?.(st => {
+        latestInputState = st;
+      });
+    } catch {}
+    try {
+      host.onHandGesture?.(ev => handleHandGesture(ev));
+    } catch {}
+    try {
+      host.onTrackpadGesture?.(ev => handleTrackpadGesture(ev));
+    } catch {}
+    try {
+      host.onTrackpadMove?.(ev => handleTrackpadMove(ev));
+    } catch {}
+    try {
+      host.onGazeProgress?.(ev => handleGazeProgress(ev));
+    } catch {}
+    try {
+      host.onGazeSelect?.(ev => handleGazeSelect(ev));
+    } catch {}
+    return true;
+  }
+
+  tryBindHost();
+
+  // Pure-browser CustomEvent fallbacks (only active when MetaTourWebAR listener API is not present, avoiding double dispatch):
+  window.addEventListener('metatour-input-state', e => {
+    if (boundHost?.onInputStateChange) return;
+    if (e?.detail) latestInputState = e.detail;
+  });
+  window.addEventListener('metatour-hand-gesture', e => {
+    if (boundHost?.onHandGesture) return;
+    handleHandGesture(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-trackpad-gesture', e => {
+    if (boundHost?.onTrackpadGesture) return;
+    handleTrackpadGesture(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-trackpad-move', e => {
+    if (boundHost?.onTrackpadMove) return;
+    handleTrackpadMove(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-gaze-progress', e => {
+    if (boundHost?.onGazeProgress) return;
+    handleGazeProgress(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-gaze-select', e => {
+    if (boundHost?.onGazeSelect) return;
+    handleGazeSelect(e?.detail ?? e);
+  });
+
+  function setReticleTarget(idOrNull) {
+    tryBindHost();
+    const clean = idOrNull ? String(idOrNull) : null;
+    const hostHasGaze = typeof window.MetaTourWebAR?.setReticleTarget === 'function';
+    if (clean !== reticleTargetId) {
+      reticleTargetId = clean;
+      if (!clean) {
+        lastProgress = 0;
+        lastProgressTargetId = null;
+        onMenuProgress?.({ targetId: null, progress: 0, triggered: false });
+      }
+    }
+    if (hostHasGaze) {
+      try {
+        window.MetaTourWebAR.setReticleTarget(clean);
+      } catch {}
+    }
+    return hostHasGaze;
+  }
+
+  return {
+    tryBindHost,
+    getCapabilities,
+    getInputState,
+    setReticleTarget,
+    hasHostGazeDwell: () => typeof window.MetaTourWebAR?.setReticleTarget === 'function',
+    lastMenuConfirmAgeMs: () => nowMs() - lastMenuSelectAt,
+    markMenuConfirmed(targetId, source = 'manual') {
+      return fireMenuSelectDedup(targetId, source);
+    },
+    simulateHandGesture: ev => handleHandGesture(ev),
+    simulateTrackpadGesture: ev => handleTrackpadGesture(ev),
+    simulateTrackpadMove: ev => handleTrackpadMove(ev),
+    simulateGazeSelect: targetId => fireMenuSelectDedup(targetId, 'simulated-gaze'),
+    stats: () => ({
+      boundHost: Boolean(boundHost),
+      capabilities: getCapabilities(),
+      inputState: getInputState(),
+      reticleTargetId,
+      lastProgressTargetId,
+      lastProgress: Number(lastProgress.toFixed(3)),
+      lastGestureSummary,
+      handGestureCount,
+      trackpadGestureCount,
+      moveEventCount,
+      gazeSelectCount,
+      moveState: { ...moveState },
+    }),
+  };
+}
