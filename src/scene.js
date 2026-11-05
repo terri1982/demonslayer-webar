@@ -625,3 +625,103 @@ export function createContactShadows(worldRoot) {
     },
   };
 }
+
+// 6DoF Right-Hand Spatial Ray Indicator for XREAL Air 2 Ultra (mounted strictly under worldRoot):
+// Only 2 draw calls (cyan Water-Breathing tapered ray + fingertip target ring), pure-black additive friendly.
+export function createHandRayIndicator(worldRoot) {
+  const group = new T.Group();
+  group.visible = false;
+  worldRoot.add(group);
+
+  const beamGeom = new T.CylinderGeometry(0.0018, 0.0052, 1, 8, 1, true);
+  beamGeom.rotateX(-Math.PI / 2);
+  beamGeom.translate(0, 0, -0.5);
+  const beamMat = new T.MeshBasicMaterial({
+    color: '#67f2ff',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const beamMesh = new T.Mesh(beamGeom, beamMat);
+  group.add(beamMesh);
+
+  const tipRing = new T.Mesh(
+    new T.RingGeometry(0.015, 0.024, 32),
+    new T.MeshBasicMaterial({
+      color: '#bffdff',
+      transparent: true,
+      opacity: 0,
+      side: T.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+      blending: T.AdditiveBlending,
+    }),
+  );
+  group.add(tipRing);
+
+  let fade = 0;
+  let wasEverActive = false;
+  const originLocal = new T.Vector3();
+  const endWorld = new T.Vector3();
+  const endLocal = new T.Vector3();
+  const dirLocal = new T.Vector3();
+  const negZ = new T.Vector3(0, 0, -1);
+  const camWorld = new T.Vector3();
+
+  return {
+    group,
+    update({
+      active = false,
+      originWorld = null,
+      dirWorld = null,
+      length = 1.9,
+      hovered = false,
+      pinching = false,
+      camera = null,
+      dt = 0.016,
+    } = {}) {
+      if (active && originWorld && dirWorld) {
+        wasEverActive = true;
+        fade = Math.min(1, fade + dt * 9);
+        originLocal.copy(originWorld);
+        worldRoot.worldToLocal(originLocal);
+
+        endWorld.copy(originWorld).addScaledVector(dirWorld, length);
+        endLocal.copy(endWorld);
+        worldRoot.worldToLocal(endLocal);
+
+        dirLocal.subVectors(endLocal, originLocal);
+        const localLen = Math.max(0.15, dirLocal.length());
+        dirLocal.normalize();
+
+        beamMesh.position.copy(originLocal);
+        beamMesh.quaternion.setFromUnitVectors(negZ, dirLocal);
+        beamMesh.scale.set(1, 1, localLen);
+
+        tipRing.position.copy(endLocal);
+        if (camera) {
+          camera.getWorldPosition(camWorld);
+          tipRing.lookAt(camWorld);
+        }
+      } else {
+        fade = Math.max(0, fade - dt * 2.4);
+      }
+
+      group.visible = fade > 0.015;
+      if (!group.visible) return;
+
+      beamMat.color.set(pinching ? '#ffffff' : hovered ? '#9efcff' : '#67f2ff');
+      beamMat.opacity = fade * (hovered ? 0.72 : 0.48);
+      tipRing.material.color.set(pinching ? '#ffe299' : hovered ? '#7df9ff' : '#bffdff');
+      tipRing.material.opacity = fade * 0.9;
+      tipRing.scale.setScalar(pinching ? 0.72 : hovered ? 1.28 : 1.0);
+    },
+    stats: () => ({
+      visible: group.visible,
+      fade: Number(fade.toFixed(3)),
+      wasEverActive,
+    }),
+  };
+}

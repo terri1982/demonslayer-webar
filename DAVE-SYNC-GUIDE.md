@@ -22,18 +22,17 @@
    - 同时检查 `window.__XREAL_CONTAINER__ === true`、`window.MetaTourWebAR?.getMode?.() === 'glasses'` 及同步 `@JavascriptInterface`（`window.XrealNativePose` / `window.AndroidXrealBridge`）。
    - AR 眼镜模式（`isGlasses === true`）隐藏全部 2D HTML 图层，WebGL 设为 `alpha: false` + `setClearColor(0x000000, 1)`（光学透视纯黑即透明），**严禁调用 `getUserMedia` 抢占摄像头**，自动调用 `navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] })`。
 3. **两阶段免低头人体工学（Phase A 3D 菜单 2 秒注视 + Phase B 注视秒锁与隔空手势）**
-   - **Phase A（开场 / 结算 3D 按钮牌）**：在世界空间正前方 `2.14m`（`2.0m ~ 2.4m` 焦平面内，XREAL `local-floor` 站姿眼高 `1.55m` 视野内 `y = 1.29m`）放置 `CanvasTexture` 3D 按钮 Mesh；每帧射线检测头部正前方是否指向该菜单按钮并调用 `window.MetaTourWebAR?.setReticleTarget?.(hoveredMenuId)`（仅菜单按钮开启 2s 驻留读条，战斗瞄鬼传 `null`），监听 `onGazeProgress` / `onGazeSelect` 绘制环形充能条并自动开战/重开，同时支持右手 `pinch` 捏合或触控板 `tap` 立即确认。
-   - **Phase B（Sticky Gaze Lock 视线持续软锁定）**：每帧用头部射线检测存活恶鬼——目光扫过恶鬼**零延迟秒锁**（并在恶鬼身上绘制世界空间 3D 锁定光环），**视线移开到空白处时保留最后一个存活锁定目标不丢失**，直至该恶鬼被击破后自动切换到最近存活恶鬼。
-4. **右手 6 种隔空手势 + 无手势眼镜盲操回退 + 左手浮动方向盘**
-   - `window.MetaTourWebAR?.onHandGesture?.(ev => ...)`（XREAL Air 2 Ultra 26 关节右手追踪）：
+   - **Phase A（开场 / 结算双 3D 按钮牌 + 动态 `gazeDwellMs` 同步）**：在世界空间正前方 `2.14m`（XREAL `local-floor` 站姿眼高 `1.55m` 的 `25°` 垂直视场 `[1.08m..1.80m]` 内）布置主、副两枚 `CanvasTexture` 3D 按钮牌（`y = 1.38m` 拔刀开战 / 再来一局、`y = 1.16m` 试炼强度切换 / 返回庭院），实时读取 `getInputState().gazeDwellMs`（动态同步容器 `关 / 1s / 2s / 3s` 设置），支持头部注视驻留或右手 6DoF 射线悬停 + 右手 `pinch` 捏合 / 触控板 `tap` 立即确认。
+   - **Phase B（顶缘超薄 3D 状态条 + 恶鬼头顶跟随 3D 血条/危字牌 + 窄视场越界导引箭头）**：进入战斗后自动收起中央大铭牌为顶缘超薄状态条（`y = 1.82m`），将恶鬼血条与红光蓄力 `【危】` 倒计时直接挂在锁定恶鬼头顶，当恶鬼偏离眼镜中心视野 `> 17°` 时在 3D 准星侧翼显示 `◀ / ▶` 导引三角，彻底释放中央光学视野。
+4. **右手 6 种隔空手势 & 6DoF 空间射线可视化 + 左手方向盘防串扰 + 持续 Squeeze 架盾**
+   - `window.MetaTourWebAR?.onHandGesture?.(ev => ...)`（XREAL Air 2 Ultra 26 关节右手追踪，并在 `XRFrame` 中读取右手 `targetRaySpace` 绘制青色水息 6DoF 空间射线）：
      - `'slash'`（`left|right|up|down`）→ 普通三段连斩（刀光弧线随挥手方向旋转）
      - `'circle'`（`clockwise`）→ 技能 1：水之呼吸·贰之型「水车」旋斩 / 满气合击
      - `'thrust'` → 技能 2：柒之型·雫波纹击刺（重击破招打断红光预警）
-     - `'fist-hold'` / `'fist-release'` → 技能 3：流流舞·守势架刀（展开 3D 水纹护盾，弹反红光攻击并聚气）
+     - `'fist-hold'` / `'fist-release'` → 技能 3：流流舞·守势持续架刀（展开 3D 水纹护盾，弹反红光攻击并聚气）
      - `'open-palm'`（张掌稳态 0.4s）→ 技能 4：全集中·水车合击奥义
-     - `'pinch'` → 菜单态立即确认 3D 按钮；战斗态触发拔刀斩
-   - `window.MetaTourWebAR?.onTrackpadGesture?.(ev => ...)`（无手势 3DoF 眼镜或右手放下时自动回退）：
-     - `'tap'` → 普攻 / 确认菜单；`'swipe-up'` → 水车旋斩；`'swipe-left'|'swipe-right'` → 突刺重击；`'hold'` → 架刀格挡；`'swipe-down'` → 全集中奥义。
+     - `'pinch'` → 专职菜单态立即确认 3D 按钮（战斗态不混发普攻，避免握拳/张掌过渡误触）
+   - **硬件分流防串扰**：当 `getCapabilities().handTracking === true`（Air 2 Ultra）时，战斗招式由右手隔空手势全权负责，手机/Beam Pro 屏幕 `100%` 专职左手浮动方向盘（快速拨动走位绝不串扰触发盲滑突刺）；当 `!handTracking`（3DoF 无手势眼镜）时自动启用全套盲滑招式（`tap` 普攻、`swipe-up` 水车、`swipe-left/right` 突刺、`hold` + WebXR `squeeze` 持续架盾不断开、`swipe-down` 奥义）。
    - `window.MetaTourWebAR?.onTrackpadMove?.(({ x, y, active }) => ...)`：左手按住手机屏幕任意位置推拉即「落指即圆心」浮动方向盘，平滑控制玩家横向/前后走位与红光闪避。
 5. **手机手持全屏无常驻顶栏与极简四角 HUD**
    - `v1.5.0` 手持模式已去除常驻顶栏实现 100% 全屏沉浸（`--metatour-top-inset` 默认为 `0px`）。网页顶部角标统一使用 `top: calc(max(env(safe-area-inset-top), var(--metatour-top-inset, 0px)) + 6px)`，左上保留超薄血条与单行里程胶囊，右上仅保留单枚圆形 `Ⅱ` 暂停按钮，战斗字幕置于底部操控区中央空档。

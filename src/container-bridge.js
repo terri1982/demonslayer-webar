@@ -589,6 +589,7 @@ export function createSpatialInputBridge({
   let moveEventCount = 0;
   let gazeSelectCount = 0;
   let holdReleaseTimer = null;
+  let squeezeHeld = false;
   const moveState = { x: 0, y: 0, active: false };
   let latestInputState = null;
 
@@ -668,6 +669,10 @@ export function createSpatialInputBridge({
         onThrust?.({ source: 'hand-thrust' });
         break;
       case 'fist-hold':
+        if (holdReleaseTimer) {
+          window.clearTimeout(holdReleaseTimer);
+          holdReleaseTimer = null;
+        }
         onGuardChange?.(true, 'hand-fist-hold');
         break;
       case 'fist-release':
@@ -677,11 +682,32 @@ export function createSpatialInputBridge({
         onUltimate?.({ source: 'hand-open-palm' });
         break;
       case 'pinch':
-        onPinch?.({ source: 'hand-pinch' });
+        onPinch?.({ source: 'hand-pinch', allowFallbackPrimary: false });
         break;
       default:
         break;
     }
+  }
+
+  function setSqueezeHeld(down, source = 'xr-squeeze') {
+    squeezeHeld = Boolean(down);
+    if (holdReleaseTimer) {
+      window.clearTimeout(holdReleaseTimer);
+      holdReleaseTimer = null;
+    }
+    onGuardChange?.(squeezeHeld, source);
+  }
+
+  function getGazeDwellMs() {
+    const st = getInputState();
+    if (st && Number.isFinite(Number(st.gazeDwellMs))) {
+      return Math.max(0, Number(st.gazeDwellMs));
+    }
+    const caps = getCapabilities();
+    if (caps && Number.isFinite(Number(caps.gazeDwellMs))) {
+      return Math.max(0, Number(caps.gazeDwellMs));
+    }
+    return isGlasses ? 2000 : 0;
   }
 
   function handleTrackpadGesture(ev) {
@@ -693,17 +719,17 @@ export function createSpatialInputBridge({
 
     if (isMenuPhase()) {
       if (type === 'tap') {
-        onPinch?.({ source: 'trackpad-tap' });
+        onPinch?.({ source: 'trackpad-tap', allowFallbackPrimary: true });
       }
       return;
     }
 
-    // On 6DoF hand-tracking glasses (e.g. XREAL Air 2 Ultra), when the right hand is actively tracked
-    // in view, combat skills are controlled exclusively by right-hand air gestures while the left hand steers.
-    // When !caps.handTracking (3DoF glasses) OR right hand is lowered (!handActive), blind trackpad gestures engage seamlessly.
-    const caps = getCapabilities();
-    const st = getInputState();
-    if (caps.handTracking && st?.handActive) return;
+    // Strict v1.5.0 Hardware Tier Rule:
+    // On 6DoF hand-tracking glasses (caps.handTracking === true, e.g. XREAL Air 2 Ultra),
+    // combat skills are controlled exclusively by right-hand air gestures while the Beam Pro / phone
+    // screen acts purely as the left-hand floating steering wheel (zero flick-to-swipe crosstalk!).
+    // On 3DoF non-hand-tracking glasses (!caps.handTracking), full blind trackpad gestures engage.
+    if (getCapabilities().handTracking) return;
 
     if (type === 'tap') {
       onSlash?.({ direction: 'right', speed: 1, source: 'trackpad-tap' });
@@ -718,11 +744,15 @@ export function createSpatialInputBridge({
       onUltimate?.({ source: 'trackpad-swipe-down' });
     } else if (type === 'hold') {
       onGuardChange?.(true, 'trackpad-hold');
-      if (holdReleaseTimer) window.clearTimeout(holdReleaseTimer);
-      holdReleaseTimer = window.setTimeout(() => {
-        holdReleaseTimer = null;
-        onGuardChange?.(false, 'trackpad-hold-End');
-      }, 950);
+      if (!squeezeHeld) {
+        if (holdReleaseTimer) window.clearTimeout(holdReleaseTimer);
+        holdReleaseTimer = window.setTimeout(() => {
+          holdReleaseTimer = null;
+          if (!squeezeHeld) {
+            onGuardChange?.(false, 'trackpad-hold-end');
+          }
+        }, 1200);
+      }
     }
   }
 
@@ -836,6 +866,8 @@ export function createSpatialInputBridge({
     tryBindHost,
     getCapabilities,
     getInputState,
+    getGazeDwellMs,
+    setSqueezeHeld,
     setReticleTarget,
     hasHostGazeDwell: () => typeof window.MetaTourWebAR?.setReticleTarget === 'function',
     lastMenuConfirmAgeMs: () => nowMs() - lastMenuSelectAt,
@@ -850,6 +882,8 @@ export function createSpatialInputBridge({
       boundHost: Boolean(boundHost),
       capabilities: getCapabilities(),
       inputState: getInputState(),
+      gazeDwellMs: getGazeDwellMs(),
+      squeezeHeld,
       reticleTargetId,
       lastProgressTargetId,
       lastProgress: Number(lastProgress.toFixed(3)),

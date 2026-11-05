@@ -38,8 +38,10 @@ export const MOVES = {
   },
 };
 
-export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
+export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'normal' } = {}) {
+  const isHashira = difficulty === 'hashira';
   const g = {
+    difficulty: isHashira ? 'hashira' : 'normal',
     bossAt,
     progress: 0,
     speed: 0,
@@ -100,7 +102,13 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     const slot = g.seq % 3;
     const x = boss ? 0 : [0, -0.52, 0.52][slot] + Math.sin(g.seq * 2.1) * 0.12;
     const z = boss ? -8.2 : [-7.6, -8.3, -8.8][slot];
-    const maxHp = boss ? 620 : 52 + Math.floor(g.progress * 0.55);
+    const maxHp = isHashira
+      ? boss
+        ? 760
+        : 66 + Math.floor(g.progress * 0.72)
+      : boss
+        ? 620
+        : 52 + Math.floor(g.progress * 0.55);
     const e = {
       id: ++g.seq,
       x,
@@ -206,6 +214,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
       g.invincible = WHEEL.duration + 0.2;
       g.ally.castStart = { x: g.ally.x, z: g.ally.z };
       emit('attack', { kind: 'musou' });
+      emit('skillCallout', { title: '水之呼吸 · 贰之型 水车合击', sub: '与炭治郎全集中合击斩鬼', accent: '#7df9ff' });
       return true;
     }
     if (kind !== 'light' && kind !== 'heavy') return false;
@@ -268,6 +277,11 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     emit('allyAttack', { target: primary?.id ?? null });
     emit('impact', { heavy: true, finisher: true, hit: targets.length > 0 });
     emit('playerSlash', { heavy: true, finisher: true, stage: 3, slashDir });
+    emit('skillCallout', {
+      title: '贰之型 · 水车旋斩',
+      sub: clockwise ? '顺时针回旋破阵' : '逆时针回旋破阵',
+      accent: '#7df9ff',
+    });
     emit('message', { text: '水之呼吸 · 贰之型 水车旋斩！', duration: 1.5 });
     return true;
   }
@@ -280,6 +294,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
       g.invincible = Math.max(g.invincible, 0.38);
     }
     if (attack('heavy', targetId, { slashDir: 'thrust' })) {
+      emit('skillCallout', { title: '柒之型 · 雫波纹击刺', sub: '贯穿红光蓄力破招', accent: '#9beeff' });
       return true;
     }
     if (g.thrustBurstCd > 0) return false;
@@ -290,6 +305,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     }
     emit('impact', { heavy: true, finisher: false, hit: !!target });
     emit('playerSlash', { heavy: true, finisher: false, stage: 1, slashDir: 'thrust' });
+    emit('skillCallout', { title: '柒之型 · 雫波纹击刺', sub: '极速突刺打断恶鬼', accent: '#9beeff' });
     emit('message', { text: '水之呼吸 · 柒之型 雫波纹击刺！', duration: 1.3 });
     return true;
   }
@@ -445,7 +461,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
       g[key] = Math.max(0, g[key] - dt);
     }
     if (g.guarding && g.musouTime < 0) {
-      g.energy = Math.min(100, g.energy + dt * 9.5);
+      g.energy = Math.min(100, g.energy + dt * (isHashira ? 12.5 : 9.5));
     }
     if (g.swing) {
       resolveSwing(dt);
@@ -492,7 +508,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
     const cap = g.progress < 10 ? 1 : 2;
     if (g.time >= g.spawnAt && living.length < cap && !g.bossSpawned) {
       spawn();
-      g.spawnAt = g.time + (g.progress < 12 ? 4.4 : 3.1);
+      g.spawnAt = g.time + (isHashira ? (g.progress < 12 ? 3.5 : 2.5) : g.progress < 12 ? 4.4 : 3.1);
     }
 
     if (g.musouTime >= 0) {
@@ -535,7 +551,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
       }
       e.cooldown -= dt;
       if (e.cooldown <= 0 && g.musouTime < 0) {
-        const duration = e.boss ? 1.45 : 1.85;
+        const duration = isHashira ? (e.boss ? 1.25 : 1.55) : e.boss ? 1.45 : 1.85;
         const h = {
           id: ++g.seq,
           source: e.id,
@@ -547,7 +563,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
           z: e.z,
         };
         g.hazards.push(h);
-        e.cooldown = e.boss ? 3.1 : 4.2;
+        e.cooldown = isHashira ? (e.boss ? 2.5 : 3.4) : e.boss ? 3.1 : 4.2;
         emit('enemyTell');
       }
     }
@@ -574,6 +590,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT } = {}) {
           }
           emit('parry', { source: h.source });
           emit('perfect');
+          emit('skillCallout', { title: '参之型 · 流流舞 完美弹反', sub: '水车合击 +18% · 震退恶鬼', accent: '#ffe299' });
           emit('message', { text: '水之呼吸 · 流流舞 弹反成功！水车 +18', duration: 1.3 });
         } else if (g.invincible <= 0) {
           const damage = source?.boss ? 16 : 10;

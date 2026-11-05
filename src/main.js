@@ -12,6 +12,7 @@ import {
   createGuardShield,
   createWarnings,
   createContactShadows,
+  createHandRayIndicator,
 } from './scene.js';
 import { createWorldPlaque } from './world-plaque.js';
 import {
@@ -99,10 +100,11 @@ worldRoot.add(dirLight);
 let ally = null;
 let assetsReady = false;
 let pendingGlassesStart = false;
-// In AR Glasses mode, Phase A opens on the 3D Spatial Welcome Plaque + 3D Gaze-Dwell Button (2.14m ahead, 0% 2D DOM)!
+// In AR Glasses mode, Phase A opens on the 3D Spatial Welcome Plaque + Dual 3D Menu Buttons (2.14m ahead, 0% 2D DOM)!
 let mode = 'welcome';
+let difficulty = 'normal';
 let cameraActive = false;
-let battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
+let battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
 
 function syncViewportSize() {
   if (renderer.xr.isPresenting) return;
@@ -156,6 +158,7 @@ const warnings = createWarnings(worldRoot);
 const shadows = createContactShadows(worldRoot);
 const slashArc = createSlashArc(worldRoot);
 const guardShield = createGuardShield(worldRoot);
+const handRay = createHandRayIndicator(worldRoot);
 const audio = createAudio();
 audio.preload();
 
@@ -189,9 +192,15 @@ let menuProgress = 0;
 let localMenuDwellSec = 0;
 let gestureHint = '';
 let gestureHintUntil = 0;
+let xrSessionRef = null;
+let handRayPinchingUntil = 0;
+let simulatedHandRay = null;
 
 const direction = new T.Vector3();
 const camWorldPos = new T.Vector3();
+const handOriginWorld = new T.Vector3();
+const handDirWorld = new T.Vector3();
+const handTempQuat = new T.Quaternion();
 const tempPoint = new T.Vector3();
 const targetQuat = new T.Quaternion();
 const gazeRay = new T.Raycaster();
@@ -310,7 +319,44 @@ function enterBattleOrQueue() {
   return true;
 }
 
-// v1.5.0 Decoupled Spatial Input Bridge (Air Gestures + Blind Trackpad + Floating Steering + 2s Gaze Dwell):
+function resetGlassesToWelcome() {
+  audio.stop();
+  effects.reset();
+  warnings.clear();
+  battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+  ally?.reset(battle.ally);
+  mode = 'welcome';
+  lockedEnemyId = null;
+  gazeOnLocked = false;
+  hoveredMenuId = null;
+  menuProgress = 0;
+  localMenuDwellSec = 0;
+  spatialInput.setReticleTarget(null);
+  syncViewportSize();
+}
+
+function handleSpatialMenuAction(targetId) {
+  audio.unlock();
+  if (targetId === 'btn-toggle-difficulty') {
+    difficulty = difficulty === 'normal' ? 'hashira' : 'normal';
+    battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+    ally?.reset(battle.ally);
+    localMenuDwellSec = 0;
+    menuProgress = 0;
+    hoveredMenuId = null;
+    spatialInput.setReticleTarget(null);
+    audio.event({ type: 'perfect' });
+    return true;
+  }
+  if (targetId === 'btn-back-welcome') {
+    resetGlassesToWelcome();
+    audio.event({ type: 'perfect' });
+    return true;
+  }
+  return enterBattleOrQueue();
+}
+
+// v1.5.0 Decoupled Spatial Input Bridge (Air Gestures + Blind Trackpad + Floating Steering + Dynamic Gaze Dwell):
 const spatialInput = createSpatialInputBridge({
   isGlasses,
   isMenuPhase: () => mode === 'welcome' || mode === 'result',
@@ -318,7 +364,7 @@ const spatialInput = createSpatialInputBridge({
     if (mode !== 'battle') return;
     audio.unlock();
     const labelMap = { left: '左挥斩', right: '右挥斩', up: '上挑斩', down: '下劈斩' };
-    setGestureHint(`【${source.startsWith('hand') ? '手势' : '盲操'}】${labelMap[dir] || '拔刀普攻'}`);
+    setGestureHint(`【${source.startsWith('hand') ? '右手手势' : '盲滑触控'}】${labelMap[dir] || '拔刀普攻'}`);
     triggerAttack('light', { slashDir: dir || 'right' });
     flushBattleEvents();
   },
@@ -342,7 +388,7 @@ const spatialInput = createSpatialInputBridge({
       return;
     }
     audio.unlock();
-    if (active) setGestureHint('【流流舞·守势】握拳架刀弹反中', 2.4);
+    if (active) setGestureHint('【流流舞·守势】持续架刀弹反中', 2.4);
     battle.setGuard(active);
     flushBattleEvents();
   },
@@ -353,17 +399,20 @@ const spatialInput = createSpatialInputBridge({
     battle.castUltimate(getCombatTargetId());
     flushBattleEvents();
   },
-  onPinch({ source }) {
+  onPinch({ source, allowFallbackPrimary = false }) {
     audio.unlock();
+    handRayPinchingUntil = performance.now() + 240;
+    // Strict v1.5.0 rule: pinch confirms Phase A spatial menu buttons ONLY;
+    // in Phase B battle, normal slashes are handled by 4-way 'slash' (or 3DoF 'tap'), avoiding fist/palm transition misfires.
     if (mode === 'welcome' || mode === 'result') {
-      const targetMenu = hoveredMenuId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle';
-      spatialInput.markMenuConfirmed(targetMenu, source);
-      return;
-    }
-    if (mode === 'battle') {
-      setGestureHint('【拔刀连斩】隔空触发');
-      triggerAttack('light', { slashDir: 'right' });
-      flushBattleEvents();
+      const targetMenu =
+        hoveredMenuId ||
+        (allowFallbackPrimary || source === 'hand-pinch' || source === 'trackpad-tap'
+          ? worldPlaque.getActiveMenuId(mode)
+          : null);
+      if (targetMenu) {
+        spatialInput.markMenuConfirmed(targetMenu, source);
+      }
     }
   },
   onMoveAxes({ x, y, active }) {
@@ -376,38 +425,73 @@ const spatialInput = createSpatialInputBridge({
       menuProgress = 0;
     }
   },
-  onMenuSelect() {
-    audio.unlock();
-    enterBattleOrQueue();
+  onMenuSelect({ targetId }) {
+    handleSpatialMenuAction(targetId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle');
   },
 });
 
-function updateStickyGazeAndMenu(activeCam, dt) {
+function findEnemyByMeshOrCone(rayOrigin, rayDir) {
+  const aliveActors = enemyView.getAliveActors();
+  if (aliveActors.length > 0) {
+    gazeRay.set(rayOrigin, rayDir);
+    gazeRay.far = REACH + 3.6;
+    const meshHit = gazeRay.intersectObjects(aliveActors, true)[0];
+    if (meshHit) {
+      let cur = meshHit.object;
+      while (cur && cur.userData?.enemyId == null) cur = cur.parent;
+      const id = cur?.userData?.enemyId;
+      if (id != null) {
+        const found = battle.enemies.find(e => e.id === id && e.hp > 0);
+        if (found) return found;
+      }
+    }
+  }
+  return findGazeHitEnemy(rayOrigin, rayDir);
+}
+
+function updateStickyGazeAndMenu(activeCam, dt, handRayInfo = null) {
   worldRoot.updateMatrixWorld(true);
   activeCam.getWorldPosition(camWorldPos);
   activeCam.getWorldDirection(direction);
 
-  // Phase A (Welcome / Result in AR Glasses): Raycast ONLY 3D Spatial Menu Button for 2s Gaze Dwell!
-  const activeMenuId = worldPlaque.getActiveMenuId(mode);
-  if (isGlasses && activeMenuId && worldPlaque.menuGroup.visible) {
-    gazeRay.set(camWorldPos, direction);
-    const hit = gazeRay.intersectObject(worldPlaque.menuHitMesh, false)[0] || null;
-    hoveredMenuId = hit ? activeMenuId : null;
+  // Phase A (Welcome / Result in AR Glasses): Raycast Dual 3D Spatial Menu Buttons (right-hand ray or head gaze)!
+  const menuMeshes = worldPlaque.getActiveMenuMeshes(mode);
+  if (isGlasses && menuMeshes.length > 0 && worldPlaque.menuGroup.visible) {
+    let hit = null;
+    if (handRayInfo?.active) {
+      gazeRay.set(handRayInfo.originWorld, handRayInfo.dirWorld);
+      gazeRay.far = 4.5;
+      hit = gazeRay.intersectObjects(menuMeshes, false)[0] || null;
+    }
+    if (!hit) {
+      gazeRay.set(camWorldPos, direction);
+      gazeRay.far = 4.5;
+      hit = gazeRay.intersectObjects(menuMeshes, false)[0] || null;
+    }
+    const nextHoverId = hit?.object?.userData?.menuId || null;
+    if (nextHoverId !== hoveredMenuId) {
+      localMenuDwellSec = 0;
+      menuProgress = 0;
+    }
+    hoveredMenuId = nextHoverId;
     const hostHandlesDwell = spatialInput.setReticleTarget(hoveredMenuId);
+    const dwellMs = spatialInput.getGazeDwellMs();
     if (!hostHandlesDwell) {
-      if (hoveredMenuId && assetsReady) {
+      const buttonReady = hoveredMenuId === 'btn-toggle-difficulty' || hoveredMenuId === 'btn-back-welcome' || assetsReady;
+      if (hoveredMenuId && buttonReady && dwellMs > 0) {
         localMenuDwellSec += dt;
-        menuProgress = Math.min(1, localMenuDwellSec / 2.0);
+        menuProgress = Math.min(1, (localMenuDwellSec * 1000) / dwellMs);
         if (menuProgress >= 1) {
+          const confirmedId = hoveredMenuId;
           localMenuDwellSec = 0;
           menuProgress = 0;
-          spatialInput.markMenuConfirmed(hoveredMenuId, 'local-gaze-dwell');
+          spatialInput.markMenuConfirmed(confirmedId, 'local-gaze-dwell');
         }
       } else {
         localMenuDwellSec = 0;
         menuProgress = 0;
       }
-    } else if (!hoveredMenuId) {
+    } else if (!hoveredMenuId || dwellMs <= 0) {
       menuProgress = 0;
     }
     return null;
@@ -423,7 +507,9 @@ function updateStickyGazeAndMenu(activeCam, dt) {
 
   if (mode !== 'battle') return null;
 
-  const hitEnemy = findGazeHitEnemy(camWorldPos, direction);
+  const hitByHand =
+    handRayInfo?.active ? findEnemyByMeshOrCone(handRayInfo.originWorld, handRayInfo.dirWorld) : null;
+  const hitEnemy = hitByHand || findEnemyByMeshOrCone(camWorldPos, direction);
   if (hitEnemy) {
     lockedEnemyId = hitEnemy.id;
     gazeOnLocked = true;
@@ -450,6 +536,7 @@ function flushBattleEvents() {
   for (const e of battle.events) {
     audio.event(e);
     if (e.type === 'message') showMessage(e.text, e.duration);
+    if (e.type === 'skillCallout') worldPlaque.triggerSkillBanner(e);
     if (e.type === 'playerSlash') {
       slashDir = e.slashDir || 'right';
       slashTime = slashDir.startsWith('spin') ? 0.38 : 0.25;
@@ -511,7 +598,7 @@ function flushBattleEvents() {
 }
 
 function enterBattle() {
-  battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
+  battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
   effects.reset();
   warnings.clear();
   ally?.reset(battle.ally);
@@ -522,6 +609,7 @@ function enterBattle() {
   hoveredMenuId = null;
   menuProgress = 0;
   localMenuDwellSec = 0;
+  spatialInput.setSqueezeHeld(false, 'enter-battle-reset');
   spatialInput.setReticleTarget(null);
   syncViewportSize();
   if (!isGlasses) {
@@ -549,45 +637,59 @@ async function startGlassesWebXRSession() {
     const session = await navigator.xr.requestSession('immersive-vr', {
       optionalFeatures: ['local-floor', 'hand-tracking'],
     });
+    xrSessionRef = session;
     diagnostics.xrSessionActive = true;
     diagnostics.xrError = null;
     session.addEventListener('end', () => {
+      xrSessionRef = null;
       diagnostics.xrSessionActive = false;
       xrBaselineHeadX = null;
-      battle.setGuard(false);
+      spatialInput.setSqueezeHeld(false, 'xr-session-end');
     });
-    session.addEventListener('select', () => {
+    session.addEventListener('selectstart', ev => {
+      if (ev?.inputSource?.hand) {
+        handRayPinchingUntil = performance.now() + 260;
+      }
+    });
+    session.addEventListener('select', ev => {
       audio.unlock();
-      // Guard against MetaTourWebAR's 2s Gaze-Dwell select event firing an accidental slash on frame 1 of battle:
+      // Guard against MetaTourWebAR's Gaze-Dwell select event firing an accidental action on frame 1 of battle:
       if (
         spatialInput.lastMenuConfirmAgeMs() < 550 ||
         performance.now() - battleEnteredAtMs < 480
       ) {
         return;
       }
+      const src = ev?.inputSource || null;
+      if (src?.hand) {
+        handRayPinchingUntil = performance.now() + 240;
+      }
       if (mode === 'welcome' || mode === 'result') {
-        const targetMenu = hoveredMenuId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle';
-        spatialInput.markMenuConfirmed(targetMenu, 'xr-select');
+        const targetMenu =
+          hoveredMenuId ||
+          (src?.targetRayMode !== 'gaze' ? worldPlaque.getActiveMenuId(mode) || 'btn-start-battle' : null);
+        if (targetMenu) {
+          spatialInput.markMenuConfirmed(targetMenu, src?.hand ? 'xr-hand-select' : 'xr-select');
+        }
         return;
       }
       if (mode === 'battle') {
-        const caps = spatialInput.getCapabilities();
-        const st = spatialInput.getInputState();
-        if (!(caps.handTracking && st?.handActive)) {
-          triggerAttack('light', { slashDir: 'right' });
-          flushBattleEvents();
-        }
-      }
-    });
-    session.addEventListener('squeezestart', () => {
-      audio.unlock();
-      if (mode === 'battle') {
-        battle.setGuard(true);
+        // Gaze is strictly Sticky Lock only; Hand uses 6 air gestures; MetaTour 3DoF pad uses onTrackpadGesture('tap').
+        // Only fire fallback slash on generic non-MetaTour WebXR controllers!
+        if (src?.targetRayMode === 'gaze' || src?.hand || window.MetaTourWebAR) return;
+        triggerAttack('light', { slashDir: 'right' });
         flushBattleEvents();
       }
     });
-    session.addEventListener('squeezeend', () => {
-      battle.setGuard(false);
+    session.addEventListener('squeezestart', ev => {
+      audio.unlock();
+      if (mode === 'battle') {
+        spatialInput.setSqueezeHeld(true, ev?.inputSource?.hand ? 'xr-hand-squeeze' : 'xr-pad-squeeze');
+        flushBattleEvents();
+      }
+    });
+    session.addEventListener('squeezeend', ev => {
+      spatialInput.setSqueezeHeld(false, ev?.inputSource?.hand ? 'xr-hand-squeeze-end' : 'xr-pad-squeeze-end');
     });
     await renderer.xr.setSession(session);
     return true;
@@ -717,7 +819,7 @@ if (!isGlasses) {
     audio.stop();
     effects.reset();
     warnings.clear();
-    battle = createBattle({ allySide: -1, bossAt: BOSS_AT });
+    battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
     ally?.reset(battle.ally);
     mode = 'welcome';
     lockedEnemyId = null;
@@ -925,8 +1027,38 @@ function effectState() {
   };
 }
 
+function extractRightHandRay(xrFrame) {
+  if (simulatedHandRay && Array.isArray(simulatedHandRay.origin) && Array.isArray(simulatedHandRay.direction)) {
+    handOriginWorld.fromArray(simulatedHandRay.origin);
+    handDirWorld.fromArray(simulatedHandRay.direction).normalize();
+    return { active: true, originWorld: handOriginWorld, dirWorld: handDirWorld };
+  }
+  if (!isGlasses || !xrFrame || !xrSessionRef?.inputSources) {
+    return { active: false, originWorld: null, dirWorld: null };
+  }
+  const refSpace = renderer.xr.getReferenceSpace?.();
+  if (!refSpace) {
+    return { active: false, originWorld: null, dirWorld: null };
+  }
+  for (const src of xrSessionRef.inputSources) {
+    if (!src.hand || (src.handedness && src.handedness !== 'right') || !src.targetRaySpace) continue;
+    try {
+      const pose = xrFrame.getPose(src.targetRaySpace, refSpace);
+      if (pose?.transform) {
+        const p = pose.transform.position;
+        const o = pose.transform.orientation;
+        handOriginWorld.set(p.x, p.y, p.z);
+        handTempQuat.set(o.x, o.y, o.z, o.w).normalize();
+        handDirWorld.set(0, 0, -1).applyQuaternion(handTempQuat).normalize();
+        return { active: true, originWorld: handOriginWorld, dirWorld: handDirWorld };
+      }
+    } catch {}
+  }
+  return { active: false, originWorld: null, dirWorld: null };
+}
+
 // Step 6: Unified Render Loop via renderer.setAnimationLoop (works for both WebXR stereo & handheld/desktop!)
-renderer.setAnimationLoop(now => {
+renderer.setAnimationLoop((now, xrFrame) => {
   const dt = Math.min(0.06, Math.max(0.001, (now - lastNow) / 1000));
   lastNow = now;
   diagnostics.frames++;
@@ -960,7 +1092,8 @@ renderer.setAnimationLoop(now => {
     gestureHint = '';
   }
 
-  const lockedTarget = updateStickyGazeAndMenu(activeCamera, dt);
+  const handRayState = extractRightHandRay(xrFrame);
+  const lockedTarget = updateStickyGazeAndMenu(activeCamera, dt, handRayState);
 
   if (mode === 'battle' && assetsReady) {
     accumulator += dt;
@@ -992,25 +1125,43 @@ renderer.setAnimationLoop(now => {
   slashTime = Math.max(0, slashTime - dt);
   slashArc.update(activeCamera, slashTime, slashHeavy, mode === 'battle', slashDir);
   guardShield.update(activeCamera, mode === 'battle' && battle.guarding, now * 0.001);
+  handRay.update({
+    active: handRayState.active,
+    originWorld: handRayState.originWorld,
+    dirWorld: handRayState.dirWorld,
+    length: hoveredMenuId ? 1.95 : lockedTarget ? Math.min(3.2, Math.hypot(lockedTarget.x, lockedTarget.z)) : 1.95,
+    hovered: Boolean(hoveredMenuId || (gazeOnLocked && lockedTarget)),
+    pinching: now < handRayPinchingUntil,
+    camera: activeCamera,
+    dt,
+  });
 
   courtyard.update(now * 0.001, battle.status === 'victory' ? 1 : 0);
   warnings.update(mode === 'battle' ? battle : { hazards: [], time: 0, player: battle.player });
   enemyView.update(mode === 'battle' || mode === 'result' ? battle : { enemies: [], time: 0 });
   shadows.update(mode === 'battle' ? battle.enemies : [], ally?.actor);
+  const caps = spatialInput.getCapabilities();
+  const inputState = spatialInput.getInputState();
   worldPlaque.update({
     mode,
+    difficulty,
     assetsReady,
     battle,
     lockedTarget,
+    nearestTarget: nearestAliveEnemy(),
     gazeOnTarget: gazeOnLocked,
     hoveredMenuId,
     menuProgress,
+    gazeDwellMs: spatialInput.getGazeDwellMs(),
+    deviceModel: caps.deviceModel || '',
+    handTracking: Boolean(caps.handTracking),
+    handActive: handRayState.active || Boolean(inputState?.handActive),
     gestureHint,
-    handTracking: Boolean(spatialInput.getCapabilities().handTracking),
     camera: activeCamera,
     xrSessionActive: diagnostics.xrSessionActive || xrPresenting,
     megaSynced: megaBridge.stats().anchorCount > 0,
     nowSec: now * 0.001,
+    dt,
   });
 
   renderer.render(scene, camera);
@@ -1059,12 +1210,17 @@ window.__webar = {
     simulateTrackpadGesture: ev => spatialInput.simulateTrackpadGesture(ev),
     simulateTrackpadMove: ev => spatialInput.simulateTrackpadMove(ev),
     simulateGazeSelect: id => spatialInput.simulateGazeSelect(id),
+    simulateSqueezeHeld: (down, source) => spatialInput.setSqueezeHeld(down, source),
+    simulateHandRay: poseOrNull => {
+      simulatedHandRay = poseOrNull;
+    },
     stats: () => spatialInput.stats(),
   },
   snapshot: () => ({
     threeRevision: T.REVISION,
     isGlasses,
     mode,
+    difficulty,
     assetsReady,
     cameraActive,
     cameraChildrenCount: camera.children.length,
@@ -1079,6 +1235,8 @@ window.__webar = {
     gazeOnLocked,
     hoveredMenuId,
     menuProgress: Number(menuProgress.toFixed(3)),
+    worldPlaque: worldPlaque.stats(),
+    handRay: handRay.stats(),
     rearCamera: rearCamera.stats(),
     pose: poseCtrl.stats(),
     glassesBridge: glassesBridge.stats(),
@@ -1088,6 +1246,7 @@ window.__webar = {
     enemies: enemyView.stats(),
     formation: formationStats(battle),
     battle: {
+      difficulty: battle.difficulty,
       status: battle.status,
       hp: battle.hp,
       energy: Number(battle.energy.toFixed(1)),

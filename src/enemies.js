@@ -82,6 +82,8 @@ export function createEnemyView(worldRoot, { bossId = 'daki' } = {}) {
 
   function release(entry) {
     entry.actor.visible = false;
+    entry.actor.userData.enemyId = null;
+    entry.actor.userData.dead = true;
     entry.mixer.stopAllAction();
     entry.name = null;
     entry.lastTime = null;
@@ -159,6 +161,8 @@ export function createEnemyView(worldRoot, { bossId = 'daki' } = {}) {
       entry.actor.rotation.set(0, e.yaw, 0);
       entry.actor.scale.setScalar(scale * fade);
       entry.actor.visible = fade > 0;
+      entry.actor.userData.enemyId = e.id;
+      entry.actor.userData.dead = e.hp <= 0;
       for (const { m, color, emissive } of entry.materials) {
         m.color.copy(color);
         if (e.flash > 0) m.color.lerp(white, 0.6);
@@ -170,6 +174,16 @@ export function createEnemyView(worldRoot, { bossId = 'daki' } = {}) {
     }
   }
 
+  function getAliveActors() {
+    const list = [];
+    for (const entry of actors.values()) {
+      if (entry.actor.visible && !entry.actor.userData.dead) {
+        list.push(entry.actor);
+      }
+    }
+    return list;
+  }
+
   function stats() {
     return {
       ready: loaded,
@@ -177,8 +191,9 @@ export function createEnemyView(worldRoot, { bossId = 'daki' } = {}) {
       templates: templates.size,
       errors: [...failures],
       activeCount: actors.size,
+      aliveActorCount: getAliveActors().length,
     };
   }
 
-  return { ready, update, stats };
+  return { ready, update, getAliveActors, stats };
 }
