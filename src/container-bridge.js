@@ -189,6 +189,7 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
     onExternalRecenter?.();
   };
   window.addEventListener('metatour-heading-reset', onHostResetEvent);
+  window.addEventListener('metatour-view-reset', onHostResetEvent);
   window.addEventListener('xreal-view-reset', onHostResetEvent);
   window.addEventListener('metatour-orientation', e => handleOrientationSignal(e?.detail ?? null));
   window.addEventListener('orientationchange', () => handleOrientationSignal(null));
@@ -456,6 +457,8 @@ export function createMegaAnchorBridge(worldRoot) {
   let boundHost = null;
   const targetOffset = new T.Vector3(0, 0, 0);
   const currentOffset = new T.Vector3(0, 0, 0);
+  const stageTranslation = new T.Vector3(0, 0, 0);
+  const smoothedStageTranslation = new T.Vector3(0, 0, 0);
   const deltaVec = new T.Vector3();
   let targetYaw = 0;
   let currentYaw = 0;
@@ -527,17 +530,32 @@ export function createMegaAnchorBridge(worldRoot) {
 
   window.addEventListener('easyar:megapose', e => applyMegaPose(e?.detail ?? e));
 
-  function update() {
+  function setStageTranslation(x = 0, y = 0, z = 0, immediate = false) {
+    stageTranslation.set(Number(x) || 0, Number(y) || 0, Number(z) || 0);
+    if (immediate) {
+      smoothedStageTranslation.copy(stageTranslation);
+      worldRoot.position.copy(currentOffset).add(smoothedStageTranslation);
+    }
+  }
+
+  function update(dt = 0.016) {
     tryBindMegaStatus();
-    if (typeof window.MetaTourWebAR?.applyMegaPose === 'function') return;
+    const blend = 1 - Math.exp(-Math.max(0.001, dt) * 18);
+    smoothedStageTranslation.lerp(stageTranslation, blend);
+
+    if (typeof window.MetaTourWebAR?.applyMegaPose === 'function') {
+      // Native container fuses Mega anchor in local-floor; worldRoot carries pure player footwork stage offset:
+      worldRoot.position.copy(smoothedStageTranslation);
+      return;
+    }
     deltaVec.subVectors(targetOffset, currentOffset);
     const dist = deltaVec.length();
     const maxStepPerFrame = 0.035; // <= 3.5cm per frame
     if (dist > 1e-5) {
       if (dist <= maxStepPerFrame) currentOffset.copy(targetOffset);
       else currentOffset.addScaledVector(deltaVec.normalize(), maxStepPerFrame);
-      worldRoot.position.copy(currentOffset);
     }
+    worldRoot.position.copy(currentOffset).add(smoothedStageTranslation);
     const dYaw = Math.atan2(Math.sin(targetYaw - currentYaw), Math.cos(targetYaw - currentYaw));
     if (Math.abs(dYaw) > 1e-4) {
       const maxYawStep = 0.018;
@@ -548,23 +566,26 @@ export function createMegaAnchorBridge(worldRoot) {
 
   return {
     applyMegaPose,
+    setStageTranslation,
     update,
     stats: () => ({
       anchorCount,
       lastAnchorId,
       lastConfidence,
       lastNativeStatus,
-      worldRootOffset: worldRoot.position.toArray(),
+      stageTranslation: smoothedStageTranslation.toArray().map(n => Number(n.toFixed(3))),
+      worldRootOffset: worldRoot.position.toArray().map(n => Number(n.toFixed(3))),
     }),
   };
 }
 
-// 6. v1.5.0 Decoupled Spatial Input Bridge (Zero-Coupling Hardware Primitives):
-// Adapts MetaTourWebAR v1.5.0+ raw spatial primitives:
+// 6. v1.5.2 Dynamic Coexistence Spatial Input Bridge (Zero-Coupling Hardware Primitives):
+// Adapts MetaTourWebAR v1.5.0 / v1.5.2 raw spatial primitives with dynamic hand/trackpad fallback:
 //   - Right-hand 6 air gestures (onHandGesture: slash / circle / thrust / fist-hold / fist-release / open-palm / pinch)
-//   - 3DoF glasses blind-touch fallback (onTrackpadGesture: tap / swipe-up / swipe-left / swipe-right / swipe-down / hold)
-//   - Left-hand floating steering wheel (onTrackpadMove: { x, y, active } or { moveX, moveY, active })
-//   - 3D spatial menu 2s Gaze Dwell (setReticleTarget + onGazeProgress + onGazeSelect)
+//   - Dynamic blind-touch fallback (onTrackpadGesture: tap / swipe-up / swipe-left / swipe-right / swipe-down / hold)
+//     automatically taking over whenever the right hand is lowered or hand stream is inactive (zero deadlock!)
+//   - Left-hand floating steering wheel (onTrackpadMove: { x, y, forward, strafe, active })
+//   - 3D spatial menu Gaze Dwell (setReticleTarget + onGazeProgress + onGazeSelect)
 export function createSpatialInputBridge({
   isGlasses = false,
   isMenuPhase = () => false,
@@ -577,12 +598,15 @@ export function createSpatialInputBridge({
   onMoveAxes,
   onMenuProgress,
   onMenuSelect,
+  onViewReset,
 } = {}) {
   let boundHost = null;
   let reticleTargetId = null;
   let lastProgress = 0;
   let lastProgressTargetId = null;
   let lastMenuSelectAt = -10000;
+  let lastHandActiveAt = -10000;
+  let squeezeDownAt = 0;
   let lastGestureSummary = '';
   let handGestureCount = 0;
   let trackpadGestureCount = 0;
@@ -590,11 +614,17 @@ export function createSpatialInputBridge({
   let gazeSelectCount = 0;
   let holdReleaseTimer = null;
   let squeezeHeld = false;
-  const moveState = { x: 0, y: 0, active: false };
+  const moveState = { x: 0, y: 0, forward: 0, strafe: 0, active: false };
   let latestInputState = null;
 
   function nowMs() {
     return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  }
+
+  function noteExternalHandActive(active) {
+    if (active) {
+      lastHandActiveAt = nowMs();
+    }
   }
 
   function getCapabilities() {
@@ -608,6 +638,7 @@ export function createSpatialInputBridge({
       deviceModel: isGlasses ? 'AR Glasses' : mode === 'handheld' ? 'Phone' : 'Browser',
       dof: isGlasses ? 6 : mode === 'handheld' ? 3 : 0,
       handTracking: false,
+      standingHeight: isGlasses ? 1.6 : 1.38,
       gaze: isGlasses,
       gazeInput: isGlasses,
       gazeDwellMs: isGlasses ? 2000 : 0,
@@ -621,21 +652,34 @@ export function createSpatialInputBridge({
     const st = window.MetaTourWebAR?.getInputState?.();
     if (st && typeof st === 'object') {
       latestInputState = st;
+      if (st.handActive) lastHandActiveAt = nowMs();
       return st;
     }
     return (
       latestInputState || {
         mode: detectContainerMode(),
         handSupported: Boolean(getCapabilities().handTracking),
-        handActive: false,
+        handStreamHealthy: handGestureCount > 0,
+        handActive: nowMs() - lastHandActiveAt < 900,
         handedness: 'right',
         trackpadActive: moveState.active,
         moveX: moveState.x,
         moveY: moveState.y,
+        forward: moveState.forward,
+        strafe: moveState.strafe,
         gazeDwellMs: getCapabilities().gazeDwellMs ?? (isGlasses ? 2000 : 0),
         gazeTargetId: reticleTargetId,
       }
     );
+  }
+
+  function isHandActivelyTracked() {
+    const st = getInputState();
+    if (st?.handActive) {
+      lastHandActiveAt = nowMs();
+      return true;
+    }
+    return nowMs() - lastHandActiveAt < 900;
   }
 
   function fireMenuSelectDedup(targetId, source = 'gaze-dwell') {
@@ -649,10 +693,22 @@ export function createSpatialInputBridge({
     return true;
   }
 
+  function triggerInstantParryWindow(source = 'instant-parry', durationMs = 950) {
+    if (holdReleaseTimer) window.clearTimeout(holdReleaseTimer);
+    onGuardChange?.(true, source);
+    holdReleaseTimer = window.setTimeout(() => {
+      holdReleaseTimer = null;
+      if (!squeezeHeld) {
+        onGuardChange?.(false, `${source}-end`);
+      }
+    }, durationMs);
+  }
+
   function handleHandGesture(ev) {
     if (!ev || typeof ev.type !== 'string') return;
     tryBindHost();
     handGestureCount++;
+    lastHandActiveAt = nowMs();
     const type = ev.type;
     const direction = ev.direction || 'right';
     const clockwise = ev.clockwise !== false && ev.direction !== 'ccw';
@@ -690,12 +746,31 @@ export function createSpatialInputBridge({
   }
 
   function setSqueezeHeld(down, source = 'xr-squeeze') {
-    squeezeHeld = Boolean(down);
+    const nextDown = Boolean(down);
+    if (nextDown) {
+      squeezeHeld = true;
+      squeezeDownAt = nowMs();
+      if (holdReleaseTimer) {
+        window.clearTimeout(holdReleaseTimer);
+        holdReleaseTimer = null;
+      }
+      onGuardChange?.(true, source);
+      return;
+    }
+    const heldMs = squeezeDownAt > 0 ? nowMs() - squeezeDownAt : 9999;
+    squeezeHeld = false;
+    squeezeDownAt = 0;
+    const isSystemReset = source === 'enter-battle-reset' || source === 'xr-session-end';
+    if (!isSystemReset && !isMenuPhase() && heldMs < 260) {
+      // Quick 2-finger tap (or legacy v1.5.0 0ms squeeze pulse) -> 0.95s Instant Water-Mirror Parry Window!
+      triggerInstantParryWindow('two-finger-parry', 950);
+      return;
+    }
     if (holdReleaseTimer) {
       window.clearTimeout(holdReleaseTimer);
       holdReleaseTimer = null;
     }
-    onGuardChange?.(squeezeHeld, source);
+    onGuardChange?.(false, source);
   }
 
   function getGazeDwellMs() {
@@ -718,18 +793,29 @@ export function createSpatialInputBridge({
     lastGestureSummary = `trackpad:${type}`;
 
     if (isMenuPhase()) {
-      if (type === 'tap') {
-        onPinch?.({ source: 'trackpad-tap', allowFallbackPrimary: true });
+      if (type === 'tap' || type === 'swipe-up') {
+        onPinch?.({ source: `trackpad-${type}`, allowFallbackPrimary: true });
       }
       return;
     }
 
-    // Strict v1.5.0 Hardware Tier Rule:
-    // On 6DoF hand-tracking glasses (caps.handTracking === true, e.g. XREAL Air 2 Ultra),
-    // combat skills are controlled exclusively by right-hand air gestures while the Beam Pro / phone
-    // screen acts purely as the left-hand floating steering wheel (zero flick-to-swipe crosstalk!).
-    // On 3DoF non-hand-tracking glasses (!caps.handTracking), full blind trackpad gestures engage.
-    if (getCapabilities().handTracking) return;
+    // v1.5.2 Dynamic Coexistence Rule (eliminates GetHandData error:1 deadlock!):
+    // - 2-finger / hold guard is ALWAYS honored regardless of hand state.
+    // - When the right hand is actively tracked in FOV (isHandActivelyTracked() === true),
+    //   air gestures lead combat while the phone screen acts purely as the left-hand steering wheel
+    //   (suppressing swipe/tap crosstalk while steering).
+    // - Whenever the right hand is lowered out of FOV or hand stream is inactive, full blind-pad
+    //   combat skills (tap / swipe-up / swipe-left / swipe-right / swipe-down / hold) engage seamlessly!
+    if (type === 'hold') {
+      if (!squeezeHeld) {
+        triggerInstantParryWindow('trackpad-hold', 1100);
+      }
+      return;
+    }
+
+    if (isHandActivelyTracked()) {
+      return;
+    }
 
     if (type === 'tap') {
       onSlash?.({ direction: 'right', speed: 1, source: 'trackpad-tap' });
@@ -742,17 +828,6 @@ export function createSpatialInputBridge({
       });
     } else if (type === 'swipe-down') {
       onUltimate?.({ source: 'trackpad-swipe-down' });
-    } else if (type === 'hold') {
-      onGuardChange?.(true, 'trackpad-hold');
-      if (!squeezeHeld) {
-        if (holdReleaseTimer) window.clearTimeout(holdReleaseTimer);
-        holdReleaseTimer = window.setTimeout(() => {
-          holdReleaseTimer = null;
-          if (!squeezeHeld) {
-            onGuardChange?.(false, 'trackpad-hold-end');
-          }
-        }, 1200);
-      }
     }
   }
 
@@ -760,12 +835,21 @@ export function createSpatialInputBridge({
     if (!m || typeof m !== 'object') return;
     moveEventCount++;
     const active = Boolean(m.active);
-    const rawX = Number(m.x ?? m.moveX) || 0;
+    const rawX = Number(m.strafe ?? m.x ?? m.moveX) || 0;
     const rawY = Number(m.y ?? m.moveY) || 0;
+    const rawForward = m.forward !== undefined ? Number(m.forward) || 0 : -rawY;
     moveState.active = active;
     moveState.x = active ? T.MathUtils.clamp(rawX, -1, 1) : 0;
     moveState.y = active ? T.MathUtils.clamp(rawY, -1, 1) : 0;
-    onMoveAxes?.({ x: moveState.x, y: moveState.y, active: moveState.active });
+    moveState.strafe = moveState.x;
+    moveState.forward = active ? T.MathUtils.clamp(rawForward, -1, 1) : 0;
+    onMoveAxes?.({
+      x: moveState.x,
+      y: moveState.y,
+      forward: moveState.forward,
+      strafe: moveState.strafe,
+      active: moveState.active,
+    });
   }
 
   function handleGazeProgress(ev) {
@@ -794,6 +878,7 @@ export function createSpatialInputBridge({
     try {
       host.onInputStateChange?.(st => {
         latestInputState = st;
+        if (st?.handActive) lastHandActiveAt = nowMs();
       });
     } catch {}
     try {
@@ -816,10 +901,29 @@ export function createSpatialInputBridge({
 
   tryBindHost();
 
+  let lastResetEventAt = -10000;
+  function handleHostViewReset() {
+    const t = nowMs();
+    if (t - lastResetEventAt < 120) return;
+    lastResetEventAt = t;
+    moveState.active = false;
+    moveState.x = 0;
+    moveState.y = 0;
+    moveState.forward = 0;
+    moveState.strafe = 0;
+    onMoveAxes?.({ x: 0, y: 0, forward: 0, strafe: 0, active: false });
+    onViewReset?.();
+  }
+  window.addEventListener('metatour-view-reset', handleHostViewReset);
+  window.addEventListener('xreal-view-reset', handleHostViewReset);
+
   // Pure-browser CustomEvent fallbacks (only active when MetaTourWebAR listener API is not present, avoiding double dispatch):
   window.addEventListener('metatour-input-state', e => {
     if (boundHost?.onInputStateChange) return;
-    if (e?.detail) latestInputState = e.detail;
+    if (e?.detail) {
+      latestInputState = e.detail;
+      if (e.detail.handActive) lastHandActiveAt = nowMs();
+    }
   });
   window.addEventListener('metatour-hand-gesture', e => {
     if (boundHost?.onHandGesture) return;
@@ -866,6 +970,8 @@ export function createSpatialInputBridge({
     tryBindHost,
     getCapabilities,
     getInputState,
+    isHandActivelyTracked,
+    noteExternalHandActive,
     getGazeDwellMs,
     setSqueezeHeld,
     setReticleTarget,
@@ -882,6 +988,7 @@ export function createSpatialInputBridge({
       boundHost: Boolean(boundHost),
       capabilities: getCapabilities(),
       inputState: getInputState(),
+      handActivelyTracked: isHandActivelyTracked(),
       gazeDwellMs: getGazeDwellMs(),
       squeezeHeld,
       reticleTargetId,

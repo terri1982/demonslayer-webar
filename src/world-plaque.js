@@ -21,7 +21,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   texture.anisotropy = 4;
 
   const group = new T.Group();
-  group.position.set(0.26, isGlasses ? 1.72 : 1.48, -2.16);
+  group.position.set(isGlasses ? 0.04 : 0.26, isGlasses ? 1.81 : 1.48, -2.16);
   worldRoot.add(group);
 
   const plaqueMesh = new T.Mesh(
@@ -46,7 +46,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     btnTex.anisotropy = 4;
 
     const slotGroup = new T.Group();
-    slotGroup.position.set(0.22, y, z);
+    slotGroup.position.set(0.04, y, z);
     slotGroup.visible = false;
     worldRoot.add(slotGroup);
 
@@ -83,25 +83,26 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     };
   }
 
-  // Primary button (y = 1.43m) & Secondary button (y = 1.20m): zero vertical hit-plane overlap, both inside 25-deg vertical FOV!
+  // Primary button (y = 1.52m, hit [1.395..1.645m] around 1.60m eye level) & Secondary button (y = 1.23m, hit [1.135..1.325m]):
+  // Zero vertical hit-plane overlap (7cm gap), centered horizontally, both inside XREAL's 25-deg vertical FOV!
   const primaryBtn = createMenuButtonSlot({
     width: 0.76,
     height: 0.19,
-    hitWidth: 0.92,
-    hitHeight: 0.215,
-    y: 1.43,
+    hitWidth: 0.94,
+    hitHeight: 0.25,
+    y: 1.52,
     z: -2.14,
   });
   const secondaryBtn = createMenuButtonSlot({
     width: 0.68,
     height: 0.148,
-    hitWidth: 0.84,
-    hitHeight: 0.18,
-    y: 1.2,
+    hitWidth: 0.86,
+    hitHeight: 0.19,
+    y: 1.23,
     z: -2.14,
   });
 
-  // --- Phase B: 3D Sticky Gaze Lock Halo + Per-Enemy Overhead 3D HP & Hazard Tag ---
+  // --- Phase B: Compact Unobstructed 3D Sticky Gaze Lock Halo + Overhead HP Tag ---
   const lockGroup = new T.Group();
   lockGroup.visible = false;
   worldRoot.add(lockGroup);
@@ -124,11 +125,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   lockGroup.add(lockBillboard);
 
   const lockDiamond = new T.Mesh(
-    new T.RingGeometry(0.185, 0.22, 4),
+    new T.RingGeometry(0.105, 0.126, 4),
     new T.MeshBasicMaterial({
       color: '#7df9ff',
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.68,
       side: T.DoubleSide,
       depthWrite: false,
       depthTest: false,
@@ -136,11 +137,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     }),
   );
   const lockOuterRing = new T.Mesh(
-    new T.RingGeometry(0.25, 0.272, 36),
+    new T.RingGeometry(0.146, 0.156, 36),
     new T.MeshBasicMaterial({
       color: '#ffe09c',
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.36,
       side: T.DoubleSide,
       depthWrite: false,
       depthTest: false,
@@ -149,7 +150,27 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   );
   lockBillboard.add(lockDiamond, lockOuterRing);
 
-  // Overhead 3D Floating Enemy Name + HP Bar + Red [危] Countdown Tag (legible at 2.4m - 5.5m)
+  // Subtle overhead diamonds on unlocked alive demons so the player knows glance-to-switch targets:
+  const unlockedMarkers = [];
+  for (let i = 0; i < 2; i++) {
+    const marker = new T.Mesh(
+      new T.RingGeometry(0.048, 0.064, 4),
+      new T.MeshBasicMaterial({
+        color: '#88f2ff',
+        transparent: true,
+        opacity: 0.48,
+        side: T.DoubleSide,
+        depthWrite: false,
+        depthTest: false,
+        blending: T.AdditiveBlending,
+      }),
+    );
+    marker.visible = false;
+    worldRoot.add(marker);
+    unlockedMarkers.push(marker);
+  }
+
+  // Compact Overhead 3D Floating Enemy Name + HP Bar + Red [危] Tag (0.52m x 0.142m -> zero torso occlusion!)
   const lockHudCanvas = document.createElement('canvas');
   lockHudCanvas.width = 640;
   lockHudCanvas.height = 180;
@@ -157,7 +178,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   const lockHudTex = new T.CanvasTexture(lockHudCanvas);
   lockHudTex.colorSpace = T.SRGBColorSpace;
   const lockHudMesh = new T.Mesh(
-    new T.PlaneGeometry(0.86, 0.242),
+    new T.PlaneGeometry(0.52, 0.146),
     new T.MeshBasicMaterial({
       map: lockHudTex,
       transparent: true,
@@ -175,11 +196,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   worldRoot.add(reticleGroup);
 
   const reticle = new T.Mesh(
-    new T.RingGeometry(0.022, 0.032, 40),
+    new T.RingGeometry(0.016, 0.023, 40),
     new T.MeshBasicMaterial({
       color: '#a5f1ec',
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.86,
       side: T.DoubleSide,
       depthWrite: false,
       depthTest: false,
@@ -636,13 +657,13 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         group.visible = mode === 'welcome' && window.innerWidth >= 700;
       }
 
-      // Smoothly transition Plaque between Phase A (prominent 3D welcome/result card) & Phase B (slim 1:1 top-rim bar)
+      // Smoothly transition Plaque between Phase A (centered 3D welcome/result card) & Phase B (slim 1:1 top-rim bar)
       if (isGlasses) {
         if (mode === 'battle') {
-          targetPlaquePos.set(0.0, 1.82, -2.24);
-          targetPlaqueScale.set(0.84, 0.84, 1);
+          targetPlaquePos.set(battle.player.x || 0, 1.85, (battle.player.z || 0) - 2.24);
+          targetPlaqueScale.set(0.8, 0.8, 1);
         } else {
-          targetPlaquePos.set(0.26, 1.72, -2.16);
+          targetPlaquePos.set(0.04, 1.81, -2.16);
           targetPlaqueScale.set(1, 1, 1);
         }
         group.position.lerp(targetPlaquePos, Math.min(1, dt * 10));
@@ -696,11 +717,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
           : `${cleanModel} · 双目透视盲滑`;
 
         if (mode === 'battle') {
-          const handStatus = handTracking
-            ? handActive
-              ? '🖐️ 右手手势已捕捉'
-              : '🖐️ 抬起右手出招 · 左手推盘走位'
-            : '📱 单指点斩 · 上滑水车 · 长按架盾';
+          const handStatus = handActive
+            ? '🖐️ 右手手势追踪中 · 左手推盘走位'
+            : handTracking
+              ? '🖐️ 抬右手出招 · 📱 盲操已自动兜底'
+              : '📱 点斩 · 快拂水车/突刺 · 按住走位 · 双指架盾';
           renderCompactBattleStrip({
             hp: Math.round(battle.hp),
             energy: Math.floor(battle.energy),
@@ -710,13 +731,13 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             rightBottom: hazard
               ? `【危】${hazard.label} ${hazard.remaining.toFixed(1)}s`
               : battle.guarding
-                ? '【流流舞 · 持续架刀弹反中】'
+                ? '【流流舞 · 水镜守势弹反中】'
                 : handStatus,
             hintLine:
               gestureHint ||
               (difficulty === 'hashira' ? '柱合试炼 · ' : '') +
                 (lockedTarget
-                  ? `已锁定${lockedTarget.boss ? '堕姬' : '恶鬼'}（转头不丢锁）· 盯住其他恶鬼即刻换锁`
+                  ? `已锁${lockedTarget.boss ? '堕姬' : '恶鬼'}（转头不丢锁）· 目光扫向别处恶鬼即刻换锁`
                   : '目光扫过前方恶鬼零延迟秒锁'),
           });
         } else {
@@ -731,11 +752,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
                   : '结界暂退 · 注视下方 3D 按钮再战',
             subtitle:
               mode === 'welcome'
-                ? `当前试炼：${difficulty === 'hashira' ? '柱合试炼（高烈度）' : '夜巡标准'} · 免低头注视或轻点触控板开战`
-                : `本局击破 ${battle.kills} · 弹反/闪避 ${battle.perfect} · 水车合击 ${battle.musouCount}`,
+                ? `当前试炼：${difficulty === 'hashira' ? '柱合试炼（高烈度）' : '夜巡标准'} · 平视下方按钮或轻点手机开战`
+                : `本局击破 ${battle.kills} · 弹反/破招 ${battle.perfect} · 水车合击 ${battle.musouCount}`,
             footer: handTracking
-              ? '右手隔空：挥手普攻 · 画圈水车 · 前刺破招 · 握拳架盾 · 张掌奥义｜左手推盘走位'
-              : '手机盲操：轻点普攻 · 上滑水车 · 左右滑突刺 · 长按持续架盾 · 下滑奥义',
+              ? '右手手势（挥斩·画圈·前刺·握拳·张掌）与手机盲操动态协同 · 左手推盘走位'
+              : '手机盲操：点按挥斩 · 上拂水车 · 左右拂突刺 · 双指架盾 · 按住走位',
           });
         }
       } else {
@@ -771,8 +792,8 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         if (isGlasses) {
           lockHudMesh.visible = true;
           const distToCam = Math.hypot(lockedTarget.x - camPosWorld.x, lockedTarget.z - camPosWorld.z);
-          const distScale = Math.max(0.92, Math.min(1.42, distToCam / 2.85));
-          lockHudMesh.position.set(0, 1.72 * lockedTarget.size, 0);
+          const distScale = Math.max(0.88, Math.min(1.12, distToCam / 3.1));
+          lockHudMesh.position.set(0, 1.78 * lockedTarget.size, 0);
           lockHudMesh.scale.setScalar(distScale);
           lockHudMesh.lookAt(camPosWorld);
           const enemyTitle = lockedTarget.boss
@@ -787,21 +808,38 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             maxHp: Math.max(1, Math.ceil(lockedTarget.maxHp || 60)),
             hazardText: Boolean(targetHazard),
             subLine: targetHazard
-              ? `【危 ${targetHazard.remaining.toFixed(1)}s】握拳弹反 或 前刺打断！`
+              ? `【危 ${targetHazard.remaining.toFixed(1)}s】握拳/双指弹反 或 前刺破招！`
               : gazeOnTarget
-                ? '视线锁定中 · 挥斩 / 画圈水车 / 前刺'
-                : '粘性锁定保持中（转头不丢锁）',
+                ? '视线已锁 · 挥斩 / 画圈水车 / 前刺'
+                : '粘性保持（看别处恶鬼即换锁）',
           });
         }
       }
 
-      // Update 3D Skill Callout Banner fade
+      // Update secondary dim diamond markers on unlocked alive demons (AR Glasses):
+      const secondaryEnemies =
+        isGlasses && mode === 'battle'
+          ? battle.enemies.filter(e => e.hp > 0 && e.id !== lockedTarget?.id).slice(0, unlockedMarkers.length)
+          : [];
+      for (let i = 0; i < unlockedMarkers.length; i++) {
+        const marker = unlockedMarkers[i];
+        const foe = secondaryEnemies[i];
+        marker.visible = Boolean(foe);
+        if (foe && camera) {
+          marker.position.set(foe.x, 1.62 * foe.size, foe.z);
+          marker.lookAt(camPosWorld);
+          marker.rotation.z = Math.PI / 4;
+        }
+      }
+
+      // Update 3D Skill Callout Banner fade (follows player footwork so it stays centered in FOV)
       if (bannerTimer > 0) {
         bannerTimer = Math.max(0, bannerTimer - dt);
         const t = 1 - bannerTimer / Math.max(0.1, bannerDuration);
         const alpha = t < 0.14 ? t / 0.14 : t > 0.72 ? (1 - t) / 0.28 : 1;
         skillBannerMesh.visible = alpha > 0.02;
         skillBannerMesh.material.opacity = Math.max(0, Math.min(1, alpha));
+        skillBannerMesh.position.set(battle.player.x || 0, 1.69, (battle.player.z || 0) - 2.18);
         if (camera) {
           camera.getWorldPosition(camPosWorld);
           skillBannerMesh.lookAt(camPosWorld);

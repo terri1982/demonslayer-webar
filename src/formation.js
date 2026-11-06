@@ -5,9 +5,9 @@
 export const BODY = { ally: 0.38, enemy: 0.36, boss: 0.44, player: 0.28, gap: 0.08 };
 export const FIELD = { left: -1.12, right: 1.12, back: -10.5, front: -1.35 };
 
-export const companionHome = side => ({
-  x: (side === 1 ? 1 : -1) * 0.46,
-  z: -2.22,
+export const companionHome = (side, isGlasses = false) => ({
+  x: (side === 1 ? 1 : -1) * (isGlasses ? 0.58 : 0.46),
+  z: isGlasses ? -2.28 : -2.22,
   yaw: Math.PI,
   radius: BODY.ally,
 });

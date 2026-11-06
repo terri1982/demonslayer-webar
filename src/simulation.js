@@ -6,6 +6,7 @@ export const WHEEL = wheelTiming;
 export const BOSS_AT = 60;
 export const WALK_SPEED = 1.35;
 export const REACH = 5.4;
+export const THRUST_REACH = 9.2;
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 export const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 export const CHAIN_LENGTH = 3;
@@ -22,7 +23,7 @@ const stage = o => {
 export const MOVES = {
   light1: stage({ kind: 'light', stage: 1, clip: 'Light1', label: '横斩', clipDuration: 0.45, speed: 1.15, peaks: [0.217], damage: 24, cancelDelay: 0.1 }),
   light2: stage({ kind: 'light', stage: 2, clip: 'Light2', label: '反手斩', clipDuration: 0.55, speed: 1.15, peaks: [0.233], damage: 26, cancelDelay: 0.1 }),
-  light3: stage({ kind: 'light', stage: 3, clip: 'Light3', label: '终结斩', clipDuration: 2.0, speed: 1.5, peaks: [0.633], damage: 40, finisher: true, cancelDelay: 0.45 }),
+  light3: stage({ kind: 'light', stage: 3, clip: 'Light3', label: '终结斩', clipDuration: 2.0, speed: 1.5, peaks: [0.633], damage: 40, finisher: true, cancelDelay: 0.24 }),
   heavy1: stage({ kind: 'heavy', stage: 1, clip: 'Heavy1', label: '突进斩', clipDuration: 1.583333, speed: 1.35, peaks: [0.3], damage: 62, heavy: true, cancelDelay: 0.3 }),
   heavy2: stage({ kind: 'heavy', stage: 2, clip: 'Heavy2', label: '连续斩击', clipDuration: 3.0, speed: 1.45, peaks: [0.233, 0.7, 1.533], damages: [30, 30, 46], damage: 30, heavy: true, cancelDelay: 0.3 }),
   heavy3: stage({ kind: 'heavy', stage: 3, clip: 'Heavy3', label: '重击连斩', clipDuration: 4.35, speed: 1.5, peaks: [0.4, 1.15, 1.817, 2.6], damages: [34, 34, 42, 66], damage: 34, heavy: true, cancelDelay: 0.4 }),
@@ -38,10 +39,11 @@ export const MOVES = {
   },
 };
 
-export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'normal' } = {}) {
+export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'normal', isGlasses = false } = {}) {
   const isHashira = difficulty === 'hashira';
   const g = {
     difficulty: isHashira ? 'hashira' : 'normal',
+    isGlasses: Boolean(isGlasses),
     bossAt,
     progress: 0,
     speed: 0,
@@ -67,7 +69,10 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     guarding: false,
     steerX: 0,
     steerY: 0,
+    steerForward: 0,
     steerActive: false,
+    footworkBaseX: 0,
+    queuedAttack: null,
     swing: null,
     moveKey: null,
     chainKind: null,
@@ -86,7 +91,12 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
   };
   const emit = (type, data = {}) => g.events.push({ type, ...data });
   g.player = { x: 0, z: 0, radius: BODY.player };
-  g.ally = { ...companionHome(allySide), side: allySide === 1 ? 1 : -1, returning: false, backing: false };
+  g.ally = {
+    ...companionHome(allySide, isGlasses),
+    side: allySide === 1 ? 1 : -1,
+    returning: false,
+    backing: false,
+  };
 
   function start() {
     if (g.status !== 'ready') return;
@@ -218,7 +228,13 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
       return true;
     }
     if (kind !== 'light' && kind !== 'heavy') return false;
-    if (g.swing && g.swing.time < MOVES[g.swing.key].cancelAt) return false;
+    if (g.swing && g.swing.time < MOVES[g.swing.key].cancelAt) {
+      if (MOVES[g.swing.key].cancelAt - g.swing.time <= 0.28) {
+        g.queuedAttack = { kind, targetId, opts, bufferTimer: 0.28 };
+      }
+      return false;
+    }
+    g.queuedAttack = null;
     const stageNo = nextStage(kind);
     if (kind === 'heavy' && stageNo === 1 && g.heavyCd > 0) return false;
     if (g.swing?.key === 'heavy3' && kind === 'heavy' && stageNo === 1) {
@@ -239,17 +255,36 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     return true;
   }
 
-  function findTargetOrNearest(targetId) {
+  function findTargetOrNearest(targetId, maxDist = REACH + 1.2) {
     let target =
       targetId == null
         ? null
-        : g.enemies.find(e => e.id === targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.2);
+        : g.enemies.find(e => e.id === targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= maxDist);
     if (!target) {
       target = g.enemies
-        .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.2)
-        .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
+        .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= maxDist)
+        .sort((a, b) => Math.hypot(a.x - g.player.x, a.z - g.player.z) - Math.hypot(b.x - g.player.x, b.z - g.player.z))[0];
     }
     return target || null;
+  }
+
+  function findThrustTarget(targetId) {
+    if (targetId != null) {
+      const locked = g.enemies.find(
+        e => e.id === targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= THRUST_REACH,
+      );
+      if (locked) return locked;
+    }
+    const charging = g.enemies
+      .filter(
+        e =>
+          e.hp > 0 &&
+          Math.hypot(e.x - g.player.x, e.z - g.player.z) <= THRUST_REACH &&
+          g.hazards.some(h => h.source === e.id && h.remaining > 0),
+      )
+      .sort((a, b) => Math.hypot(a.x - g.player.x, a.z - g.player.z) - Math.hypot(b.x - g.player.x, b.z - g.player.z))[0];
+    if (charging) return charging;
+    return findTargetOrNearest(null, THRUST_REACH);
   }
 
   // Skill 1 (Air Gesture 'circle' / Trackpad 'swipe-up' / Key '1'): Water Wheel Spin / Full Musou
@@ -263,9 +298,9 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     g.spinCd = 1.05;
     g.invincible = Math.max(g.invincible, 0.36);
     const targets = g.enemies.filter(
-      e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.2,
+      e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.4,
     );
-    const primary = findTargetOrNearest(targetId);
+    const primary = findTargetOrNearest(targetId, REACH + 1.4);
     if (targets.length > 0) {
       for (const foe of targets) {
         hurtEnemy(foe, foe.id === primary?.id ? 40 : 28, true, true, true);
@@ -273,39 +308,74 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     }
     g.energy = Math.min(100, g.energy + 14);
     const slashDir = clockwise ? 'spin-cw' : 'spin-ccw';
-    emit('waterWheelSpin', { clockwise, hitCount: targets.length });
+    emit('waterWheelSpin', {
+      clockwise,
+      hitCount: targets.length,
+      x: primary ? primary.x : g.player.x,
+      z: primary ? primary.z : g.player.z - 2.25,
+    });
     emit('allyAttack', { target: primary?.id ?? null });
     emit('impact', { heavy: true, finisher: true, hit: targets.length > 0 });
     emit('playerSlash', { heavy: true, finisher: true, stage: 3, slashDir });
     emit('skillCallout', {
       title: '贰之型 · 水车旋斩',
-      sub: clockwise ? '顺时针回旋破阵' : '逆时针回旋破阵',
+      sub: clockwise ? '顺时针立体水轮破阵' : '逆时针立体水轮破阵',
       accent: '#7df9ff',
     });
     emit('message', { text: '水之呼吸 · 贰之型 水车旋斩！', duration: 1.5 });
     return true;
   }
 
-  // Skill 2 (Air Gesture 'thrust' / Trackpad 'swipe-left'|'swipe-right' / Key '2'): Piercing Thrust
+  // Skill 2 (Air Gesture 'thrust' / Trackpad 'swipe-left'|'swipe-right' / Key '2'): 9.2m Piercing Ripple Thrust
   function castThrust(targetId, lateralDir = null) {
     if (g.status !== 'playing' || g.musouTime >= 0) return false;
     g.guarding = false;
     if (lateralDir && g.hazards.some(h => h.remaining <= 0.7 && h.remaining > 0)) {
       g.invincible = Math.max(g.invincible, 0.38);
     }
-    if (attack('heavy', targetId, { slashDir: 'thrust' })) {
-      emit('skillCallout', { title: '柒之型 · 雫波纹击刺', sub: '贯穿红光蓄力破招', accent: '#9beeff' });
+    const target = findThrustTarget(targetId);
+    const hadHazard = target ? g.hazards.some(h => h.source === target.id && h.remaining > 0) : false;
+    if (target && hadHazard) {
+      removeHazards(target);
+      target.stun = Math.max(target.stun, 0.85);
+      target.flash = 0.16;
+      g.perfect++;
+      g.energy = Math.min(100, g.energy + 12);
+    }
+    if (attack('heavy', target?.id ?? targetId, { slashDir: 'thrust' })) {
+      emit('thrustWave', {
+        fromX: g.player.x,
+        fromZ: g.player.z,
+        toX: target ? target.x : g.player.x,
+        toZ: target ? target.z : g.player.z - 4.2,
+        interrupted: hadHazard,
+      });
+      emit('skillCallout', {
+        title: hadHazard ? '柒之型 · 雫波纹击刺（破招！）' : '柒之型 · 雫波纹击刺',
+        sub: hadHazard ? '远程贯穿蓄力红圈 · 水车 +12%' : '9.2m 贯穿水矛破敌',
+        accent: hadHazard ? '#ffe299' : '#9beeff',
+      });
       return true;
     }
     if (g.thrustBurstCd > 0) return false;
     g.thrustBurstCd = 0.42;
-    const target = findTargetOrNearest(targetId);
     if (target) {
-      hurtEnemy(target, 32, true, true, true);
+      hurtEnemy(target, hadHazard ? 44 : 32, true, true, true);
     }
+    emit('thrustWave', {
+      fromX: g.player.x,
+      fromZ: g.player.z,
+      toX: target ? target.x : g.player.x,
+      toZ: target ? target.z : g.player.z - 4.2,
+      interrupted: hadHazard,
+    });
     emit('impact', { heavy: true, finisher: false, hit: !!target });
     emit('playerSlash', { heavy: true, finisher: false, stage: 1, slashDir: 'thrust' });
-    emit('skillCallout', { title: '柒之型 · 雫波纹击刺', sub: '极速突刺打断恶鬼', accent: '#9beeff' });
+    emit('skillCallout', {
+      title: hadHazard ? '柒之型 · 雫波纹击刺（破招！）' : '柒之型 · 雫波纹击刺',
+      sub: hadHazard ? '极速贯穿打断蓄力' : '极速水矛突刺',
+      accent: hadHazard ? '#ffe299' : '#9beeff',
+    });
     emit('message', { text: '水之呼吸 · 柒之型 雫波纹击刺！', duration: 1.3 });
     return true;
   }
@@ -318,6 +388,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     if (next) {
       g.swing = null;
       g.moveKey = null;
+      g.queuedAttack = null;
       emit('guardStart');
       emit('message', { text: '水之呼吸 · 流流舞 守势架刀（可弹反红光攻击）', duration: 1.5 });
     } else {
@@ -326,28 +397,59 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     return g.guarding;
   }
 
-  // Skill 4 (Air Gesture 'open-palm' / Trackpad 'swipe-down' / Key '3'): Full-Concentration Ultimate
+  // Skill 4 (Air Gesture 'open-palm' / Trackpad 'swipe-down' / Key '3'): Full-Concentration Ultimate / Breath Surge
   function castUltimate(targetId) {
     if (g.status !== 'playing' || g.musouTime >= 0) return false;
-    if (g.energy < 100) {
-      if (g.ultCd > 0) {
-        emit('message', { text: `全集中呼吸回气中（${g.ultCd.toFixed(1)}s）`, duration: 1.2 });
-        return false;
-      }
-      g.energy = 100;
-      g.ultCd = 5.0;
+    if (g.energy >= 100) {
+      return attack('musou', targetId);
     }
-    return attack('musou', targetId);
+    if (g.ultCd > 0) {
+      emit('skillCallout', {
+        title: '全集中 · 呼吸调息中',
+        sub: `${g.ultCd.toFixed(1)}s 后可再次聚气（当前 ${Math.floor(g.energy)}%）`,
+        accent: '#b6a1ff',
+        duration: 0.9,
+      });
+      emit('message', { text: `全集中呼吸回气中（${g.ultCd.toFixed(1)}s）`, duration: 1.2 });
+      return false;
+    }
+    g.energy = Math.min(100, g.energy + 25);
+    g.ultCd = 6.0;
+    g.invincible = Math.max(g.invincible, 0.32);
+    emit('breathSurge', { energy: g.energy, x: g.player.x, z: g.player.z });
+    if (g.energy >= 100) {
+      return attack('musou', targetId);
+    }
+    emit('perfect');
+    emit('skillCallout', {
+      title: '全集中 · 常中聚气 +25%',
+      sub: `呼吸槽 ${Math.floor(g.energy)}% · 满 100% 释放水龙合击`,
+      accent: '#7df9ff',
+    });
+    emit('message', { text: `全集中呼吸聚气 +25%（当前 ${Math.floor(g.energy)}%）`, duration: 1.3 });
+    return true;
   }
 
-  // Left-Hand Blind Floating Steering Pad (onTrackpadMove: x/y in [-1, 1])
-  function setMoveAxes(x = 0, y = 0, active = false) {
+  // Left-Hand Blind Floating Steering Pad (onTrackpadMove: x, y, forward in [-1, 1])
+  function setMoveAxes(x = 0, y = 0, active = false, forward = undefined) {
     g.steerActive = Boolean(active);
     g.steerX = g.steerActive ? clamp(Number(x) || 0, -1, 1) : 0;
     g.steerY = g.steerActive ? clamp(Number(y) || 0, -1, 1) : 0;
+    const rawForward = forward !== undefined ? Number(forward) || 0 : -g.steerY;
+    g.steerForward = g.steerActive ? clamp(rawForward, -1, 1) : 0;
     if (g.steerActive && Math.abs(g.steerX) > 0.62 && g.hazards.length > 0 && g.dodgeCd <= 0) {
       dodge(g.steerX > 0 ? 1 : -1);
     }
+  }
+
+  function resetFootwork() {
+    g.player.x = 0;
+    g.player.z = 0;
+    g.footworkBaseX = 0;
+    g.steerActive = false;
+    g.steerX = 0;
+    g.steerY = 0;
+    g.steerForward = 0;
   }
 
   function resolveSwing(dt) {
@@ -355,6 +457,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     if (!s) return;
     s.time += dt;
     const m = MOVES[s.key];
+    const maxHitDist = s.slashDir === 'thrust' ? THRUST_REACH : REACH + 1.0;
     while (s.beat < m.beats.length && s.time + 1e-8 >= m.beats[s.beat]) {
       const beat = s.beat++;
       const last = beat === m.beats.length - 1;
@@ -363,11 +466,11 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
       let target =
         s.targetId == null
           ? null
-          : g.enemies.find(e => e.id === s.targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.0);
+          : g.enemies.find(e => e.id === s.targetId && e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= maxHitDist);
       if (!target) {
         target = g.enemies
-          .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.0)
-          .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
+          .filter(e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= maxHitDist)
+          .sort((a, b) => Math.hypot(a.x - g.player.x, a.z - g.player.z) - Math.hypot(b.x - g.player.x, b.z - g.player.z))[0];
       }
       if (target) hurtEnemy(target, damage, !!m.heavy && last, true, pop);
       emit('impact', { heavy: !!m.heavy && last, finisher: !!m.finisher && last, hit: !!target });
@@ -405,7 +508,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
 
   function updateAlly(dt, rootProgress) {
     const a = g.ally;
-    const home = companionHome(a.side);
+    const home = companionHome(a.side, g.isGlasses);
     if (g.musouTime >= 0) {
       const progress = clamp(rootProgress ? rootProgress(g.musouTime) : g.musouTime / (WHEEL.landingTime - 0.06), 0, 1);
       a.x = a.castStart.x;
@@ -420,9 +523,13 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
       const side = a.side;
       let hx = home.x;
       let hz = home.z;
+      const lateralCap = g.isGlasses ? 0.78 : 0.66;
       if (foe) {
-        hx = clamp(home.x + clamp((foe.x - home.x) * side, -0.2, 0.35) * side, -0.66, 0.66);
-        hz = clamp(foe.z + 0.85, -2.55, -2.02);
+        hx = clamp(home.x + clamp((foe.x - home.x) * side, -0.16, 0.28) * side, -lateralCap, lateralCap);
+        if (g.isGlasses && Math.abs(hx) < 0.48) {
+          hx = side * 0.48;
+        }
+        hz = clamp(foe.z + 0.85, -2.6, -2.06);
       }
       const dx = hx - a.x;
       const dz = hz - a.z;
@@ -472,14 +579,30 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
         g.chainKind = null;
       }
     }
+    if (g.queuedAttack) {
+      g.queuedAttack.bufferTimer -= dt;
+      if (g.queuedAttack.bufferTimer <= 0) {
+        g.queuedAttack = null;
+      } else if (!g.swing || g.swing.time >= MOVES[g.swing.key].cancelAt) {
+        const q = g.queuedAttack;
+        g.queuedAttack = null;
+        attack(q.kind, q.targetId, q.opts);
+      }
+    }
     if (g.dodgeTime > 0) {
-      g.player.x = Math.sin((g.dodgeTime / 0.48) * Math.PI) * 0.52 * g.dodgeDirection;
+      g.player.x = clamp(
+        g.footworkBaseX + Math.sin((g.dodgeTime / 0.48) * Math.PI) * 0.52 * g.dodgeDirection,
+        -0.85,
+        0.85,
+      );
     } else if (g.steerActive) {
-      g.player.x = clamp(g.player.x + g.steerX * dt * 1.65, -0.68, 0.68);
-      g.player.z = clamp(g.player.z - g.steerY * dt * 1.25, -0.52, 0.42);
-    } else {
+      g.player.x = clamp(g.player.x + g.steerX * dt * 1.85, -0.78, 0.78);
+      g.player.z = clamp(g.player.z - g.steerForward * dt * 1.45, -0.75, 0.55);
+      g.footworkBaseX = g.player.x;
+    } else if (!g.isGlasses) {
       g.player.x += (0 - g.player.x) * Math.min(1, dt * 6);
       g.player.z += (0 - g.player.z) * Math.min(1, dt * 6);
+      g.footworkBaseX = g.player.x;
     }
 
     const close = g.enemies.some(e => e.hp > 0 && e.z > -4.8);
@@ -588,7 +711,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
             source.stun = Math.max(source.stun, 0.55);
             source.flash = 0.14;
           }
-          emit('parry', { source: h.source });
+          emit('parry', { source: h.source, x: source ? source.x : g.player.x, z: source ? source.z : g.player.z - 1.8 });
           emit('perfect');
           emit('skillCallout', { title: '参之型 · 流流舞 完美弹反', sub: '水车合击 +18% · 震退恶鬼', accent: '#ffe299' });
           emit('message', { text: '水之呼吸 · 流流舞 弹反成功！水车 +18', duration: 1.3 });
@@ -640,5 +763,6 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     setGuard,
     castUltimate,
     setMoveAxes,
+    resetFootwork,
   });
 }

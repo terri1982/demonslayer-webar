@@ -13,6 +13,7 @@ import {
   createWarnings,
   createContactShadows,
   createHandRayIndicator,
+  createSpatialCombatVfx,
 } from './scene.js';
 import { createWorldPlaque } from './world-plaque.js';
 import {
@@ -87,7 +88,7 @@ worldRoot.name = 'WorldSpatialRoot';
 scene.add(worldRoot);
 
 const camera = new T.PerspectiveCamera(50, window.innerWidth / Math.max(1, window.innerHeight), 0.05, 36);
-camera.position.set(0, 1.38, 0);
+camera.position.set(0, isGlasses ? 1.6 : 1.38, 0);
 scene.add(camera);
 
 const hemiLight = new T.HemisphereLight(0xe5f6ff, 0x8d8297, 2.45);
@@ -104,7 +105,7 @@ let pendingGlassesStart = false;
 let mode = 'welcome';
 let difficulty = 'normal';
 let cameraActive = false;
-let battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+let battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
 
 function syncViewportSize() {
   if (renderer.xr.isPresenting) return;
@@ -159,6 +160,7 @@ const shadows = createContactShadows(worldRoot);
 const slashArc = createSlashArc(worldRoot);
 const guardShield = createGuardShield(worldRoot);
 const handRay = createHandRayIndicator(worldRoot);
+const spatialVfx = createSpatialCombatVfx(worldRoot);
 const audio = createAudio();
 audio.preload();
 
@@ -322,8 +324,10 @@ function enterBattleOrQueue() {
 function resetGlassesToWelcome() {
   audio.stop();
   effects.reset();
+  spatialVfx.reset();
   warnings.clear();
-  battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+  megaBridge.setStageTranslation(0, 0, 0, true);
+  battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
   ally?.reset(battle.ally);
   mode = 'welcome';
   lockedEnemyId = null;
@@ -339,7 +343,7 @@ function handleSpatialMenuAction(targetId) {
   audio.unlock();
   if (targetId === 'btn-toggle-difficulty') {
     difficulty = difficulty === 'normal' ? 'hashira' : 'normal';
-    battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+    battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
     ally?.reset(battle.ally);
     localMenuDwellSec = 0;
     menuProgress = 0;
@@ -415,8 +419,8 @@ const spatialInput = createSpatialInputBridge({
       }
     }
   },
-  onMoveAxes({ x, y, active }) {
-    battle.setMoveAxes(x, y, active);
+  onMoveAxes({ x, y, forward, active }) {
+    battle.setMoveAxes(x, y, active, forward);
   },
   onMenuProgress({ targetId, progress }) {
     if (targetId && targetId === hoveredMenuId) {
@@ -427,6 +431,14 @@ const spatialInput = createSpatialInputBridge({
   },
   onMenuSelect({ targetId }) {
     handleSpatialMenuAction(targetId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle');
+  },
+  onViewReset() {
+    battle.resetFootwork();
+    xrBaselineHeadX = null;
+    megaBridge.setStageTranslation(0, 0, 0, true);
+    if (mode === 'battle') {
+      setGestureHint('【空间回正】已重置正前方视角与步法站位', 1.6);
+    }
   },
 });
 
@@ -507,9 +519,9 @@ function updateStickyGazeAndMenu(activeCam, dt, handRayInfo = null) {
 
   if (mode !== 'battle') return null;
 
-  const hitByHand =
-    handRayInfo?.active ? findEnemyByMeshOrCone(handRayInfo.originWorld, handRayInfo.dirWorld) : null;
-  const hitEnemy = hitByHand || findEnemyByMeshOrCone(camWorldPos, direction);
+  // Pure Head-Gaze Sticky Lock in Phase B:
+  // Right-hand combat swings never hijack or un-lock the demon you are looking at!
+  const hitEnemy = findEnemyByMeshOrCone(camWorldPos, direction);
   if (hitEnemy) {
     lockedEnemyId = hitEnemy.id;
     gazeOnLocked = true;
@@ -537,17 +549,28 @@ function flushBattleEvents() {
     audio.event(e);
     if (e.type === 'message') showMessage(e.text, e.duration);
     if (e.type === 'skillCallout') worldPlaque.triggerSkillBanner(e);
-    if (e.type === 'playerSlash') {
+    if (e.type === 'swing' || e.type === 'playerSlash') {
       slashDir = e.slashDir || 'right';
       slashTime = slashDir.startsWith('spin') ? 0.38 : 0.25;
       slashHeavy = !!(e.heavy || e.finisher);
-      navigator.vibrate?.(slashHeavy ? 18 : 8);
+      if (e.type === 'playerSlash') {
+        navigator.vibrate?.(slashHeavy ? 18 : 8);
+      }
     }
     if (e.type === 'waterWheelSpin') {
-      effects.ring(0, -2.05, true);
+      spatialVfx.triggerWaterWheel(e);
+      effects.ring(e.x ?? 0, e.z ?? -2.05, true);
+    }
+    if (e.type === 'thrustWave') {
+      spatialVfx.triggerThrust(e);
+    }
+    if (e.type === 'breathSurge') {
+      spatialVfx.triggerBreathSurge(e);
+      effects.ring(e.x ?? 0, (e.z ?? 0) - 1.75, false);
     }
     if (e.type === 'parry') {
       hurtFlash = 0;
+      spatialVfx.triggerParry(e);
       effects.ring(battle.player.x, -1.45, false);
       navigator.vibrate?.(14);
     }
@@ -598,9 +621,11 @@ function flushBattleEvents() {
 }
 
 function enterBattle() {
-  battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+  battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
   effects.reset();
+  spatialVfx.reset();
   warnings.clear();
+  megaBridge.setStageTranslation(0, 0, 0, true);
   ally?.reset(battle.ally);
   mode = 'battle';
   battleEnteredAtMs = performance.now();
@@ -818,8 +843,10 @@ if (!isGlasses) {
     syncBackdropVisibility(false);
     audio.stop();
     effects.reset();
+    spatialVfx.reset();
     warnings.clear();
-    battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty });
+    megaBridge.setStageTranslation(0, 0, 0, true);
+    battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
     ally?.reset(battle.ally);
     mode = 'welcome';
     lockedEnemyId = null;
@@ -1057,6 +1084,8 @@ function extractRightHandRay(xrFrame) {
   return { active: false, originWorld: null, dirWorld: null };
 }
 
+let xrGamepadSteeringActive = false;
+
 // Step 6: Unified Render Loop via renderer.setAnimationLoop (works for both WebXR stereo & handheld/desktop!)
 renderer.setAnimationLoop((now, xrFrame) => {
   const dt = Math.min(0.06, Math.max(0.001, (now - lastNow) / 1000));
@@ -1067,7 +1096,7 @@ renderer.setAnimationLoop((now, xrFrame) => {
   const activeCamera = xrPresenting ? renderer.xr.getCamera() : camera;
 
   if (!xrPresenting) {
-    camera.position.set(battle.player.x, 1.38, battle.player.z || 0);
+    camera.position.set(battle.player.x, isGlasses ? 1.6 : 1.38, battle.player.z || 0);
     targetQuat.copy(poseCtrl.getQuaternion());
     camera.quaternion.slerp(targetQuat, 1 - Math.exp(-dt * 22));
     camera.updateMatrixWorld(true);
@@ -1084,15 +1113,44 @@ renderer.setAnimationLoop((now, xrFrame) => {
     } else {
       xrBaselineHeadX += (camWorldPos.x - xrBaselineHeadX) * Math.min(1, dt * 1.5);
     }
+
+    // Standard WebXR Gamepad Axes Fallback (when not driven by MetaTour onTrackpadMove):
+    if (!spatialInput.stats().moveState.active && xrSessionRef?.inputSources) {
+      let gpX = 0;
+      let gpY = 0;
+      for (const src of xrSessionRef.inputSources) {
+        const axes = src?.gamepad?.axes;
+        if (!axes || axes.length < 2) continue;
+        const ax = axes.length >= 4 && Math.hypot(axes[2], axes[3]) > 0.08 ? axes[2] : axes[0];
+        const ay = axes.length >= 4 && Math.hypot(axes[2], axes[3]) > 0.08 ? axes[3] : axes[1];
+        if (Math.hypot(ax, ay) > Math.hypot(gpX, gpY)) {
+          gpX = ax;
+          gpY = ay;
+        }
+      }
+      if (Math.hypot(gpX, gpY) > 0.14) {
+        xrGamepadSteeringActive = true;
+        battle.setMoveAxes(gpX, gpY, true, -gpY);
+      } else if (xrGamepadSteeringActive) {
+        xrGamepadSteeringActive = false;
+        battle.setMoveAxes(0, 0, false, 0);
+      }
+    }
   }
 
-  megaBridge.update();
+  megaBridge.setStageTranslation(
+    xrPresenting ? -battle.player.x : 0,
+    0,
+    xrPresenting ? -(battle.player.z || 0) : 0,
+  );
+  megaBridge.update(dt);
 
   if (gestureHint && now > gestureHintUntil) {
     gestureHint = '';
   }
 
   const handRayState = extractRightHandRay(xrFrame);
+  spatialInput.noteExternalHandActive(handRayState.active);
   const lockedTarget = updateStickyGazeAndMenu(activeCamera, dt, handRayState);
 
   if (mode === 'battle' && assetsReady) {
@@ -1125,6 +1183,13 @@ renderer.setAnimationLoop((now, xrFrame) => {
   slashTime = Math.max(0, slashTime - dt);
   slashArc.update(activeCamera, slashTime, slashHeavy, mode === 'battle', slashDir);
   guardShield.update(activeCamera, mode === 'battle' && battle.guarding, now * 0.001);
+  spatialVfx.update({
+    battle,
+    active: mode === 'battle',
+    camera: activeCamera,
+    nowSec: now * 0.001,
+    dt,
+  });
   handRay.update({
     active: handRayState.active,
     originWorld: handRayState.originWorld,
@@ -1237,6 +1302,7 @@ window.__webar = {
     menuProgress: Number(menuProgress.toFixed(3)),
     worldPlaque: worldPlaque.stats(),
     handRay: handRay.stats(),
+    spatialVfx: spatialVfx.stats(),
     rearCamera: rearCamera.stats(),
     pose: poseCtrl.stats(),
     glassesBridge: glassesBridge.stats(),

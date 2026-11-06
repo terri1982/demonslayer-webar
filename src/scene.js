@@ -510,7 +510,7 @@ export function createGuardShield(worldRoot) {
       camera.getWorldPosition(worldPos);
       camera.getWorldDirection(forward);
       worldPos.addScaledVector(forward, 1.32);
-      worldPos.y -= 0.19;
+      worldPos.y -= 0.06;
       worldRoot.worldToLocal(worldPos);
       group.position.copy(worldPos);
 
@@ -722,6 +722,344 @@ export function createHandRayIndicator(worldRoot) {
       visible: group.visible,
       fade: Number(fade.toFixed(3)),
       wasEverActive,
+    }),
+  };
+}
+
+// Zero-GC Eye-Level (y = 1.15m..1.65m) 3D Spatial Water-Breathing VFX Pool for AR Glasses & WebAR:
+// Strictly mounted under worldRoot (camera.children.length === 0).
+// Pre-allocates <= 11 lightweight AdditiveBlending meshes (0 draw calls when idle) so every skill,
+// enemy crimson telegraph, and footwork steering input has unmistakable 1:1 3D feedback inside XREAL's 25-deg vertical FOV.
+export function createSpatialCombatVfx(worldRoot) {
+  const root = new T.Group();
+  root.name = 'SpatialCombatVfxPool';
+  worldRoot.add(root);
+
+  // 1. 3D Upright Water Wheel ('circle' / 'swipe-up' -> 贰之型·水车): 2 draw calls when active
+  const wheelGroup = new T.Group();
+  wheelGroup.visible = false;
+  root.add(wheelGroup);
+
+  const wheelTorusMat = new T.MeshBasicMaterial({
+    color: '#32d9ff',
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const wheelTorus = new T.Mesh(new T.TorusGeometry(0.64, 0.018, 10, 64), wheelTorusMat);
+  wheelGroup.add(wheelTorus);
+
+  const wheelFoamMat = new T.MeshBasicMaterial({
+    color: '#9cf6ff',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const wheelFoam = new T.Mesh(new T.RingGeometry(0.54, 0.578, 56, 1, 0.25, Math.PI * 1.35), wheelFoamMat);
+  wheelGroup.add(wheelFoam);
+
+  // 2. 3D 9.2m Piercing Water Spear + 3 Vertical Ripple Rings ('thrust' -> 柒之型·雫波纹击刺): 4 draw calls when active
+  const thrustGroup = new T.Group();
+  thrustGroup.visible = false;
+  root.add(thrustGroup);
+
+  const spearGeom = new T.CylinderGeometry(0.0035, 0.016, 1, 8, 1, true);
+  spearGeom.rotateX(-Math.PI / 2);
+  spearGeom.translate(0, 0, -0.5);
+  const spearMat = new T.MeshBasicMaterial({
+    color: '#4ae4ff',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const spearMesh = new T.Mesh(spearGeom, spearMat);
+  thrustGroup.add(spearMesh);
+
+  const rippleRings = [];
+  for (let i = 0; i < 3; i++) {
+    const rMat = new T.MeshBasicMaterial({
+      color: '#8cf2ff',
+      transparent: true,
+      opacity: 0,
+      side: T.DoubleSide,
+      depthWrite: false,
+      blending: T.AdditiveBlending,
+    });
+    const rMesh = new T.Mesh(new T.RingGeometry(0.13 + i * 0.085, 0.144 + i * 0.085, 40), rMat);
+    thrustGroup.add(rMesh);
+    rippleRings.push(rMesh);
+  }
+
+  // 3. Eye-Level Contracting Crimson Enemy Hazard Ring + Golden Parry Shockwave: 2 draw calls when active
+  const hazardMat = new T.MeshBasicMaterial({
+    color: '#ff3858',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    depthTest: false,
+    blending: T.AdditiveBlending,
+  });
+  const hazardRingMesh = new T.Mesh(new T.RingGeometry(0.39, 0.445, 48), hazardMat);
+  hazardRingMesh.visible = false;
+  root.add(hazardRingMesh);
+
+  const parryMat = new T.MeshBasicMaterial({
+    color: '#ffe299',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    depthTest: false,
+    blending: T.AdditiveBlending,
+  });
+  const parryWaveMesh = new T.Mesh(new T.RingGeometry(0.2, 0.26, 48), parryMat);
+  parryWaveMesh.visible = false;
+  root.add(parryWaveMesh);
+
+  // 4. 3D Ultimate Water Dragon Spiral & Breath Surge Vortex ('open-palm' / 'musou'): 2 draw calls when active
+  const ultGroup = new T.Group();
+  ultGroup.visible = false;
+  root.add(ultGroup);
+
+  const dragonMat = new T.MeshBasicMaterial({
+    color: '#3ae0ff',
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const dragonHelix = new T.Mesh(new T.TorusKnotGeometry(0.56, 0.018, 64, 8, 2, 3), dragonMat);
+  ultGroup.add(dragonHelix);
+
+  const surgeMat = new T.MeshBasicMaterial({
+    color: '#74eeff',
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const surgeHalo = new T.Mesh(new T.TorusGeometry(0.58, 0.015, 10, 56), surgeMat);
+  surgeHalo.rotation.x = Math.PI / 2;
+  ultGroup.add(surgeHalo);
+
+  // 5. Lower-FOV 3D Footwork Steering Compass (y = 1.18m, z = -1.92m): 1 draw call only while steering
+  const footworkMat = new T.MeshBasicMaterial({
+    color: '#7df9ff',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    depthTest: false,
+    blending: T.AdditiveBlending,
+  });
+  const footworkRing = new T.Mesh(new T.RingGeometry(0.085, 0.112, 6), footworkMat);
+  footworkRing.rotation.x = -Math.PI * 0.34;
+  footworkRing.visible = false;
+  root.add(footworkRing);
+
+  let wheelTimer = 0;
+  let wheelClockwise = true;
+  let thrustTimer = 0;
+  let thrustInterrupted = false;
+  let parryTimer = 0;
+  let surgeTimer = 0;
+  let footworkFade = 0;
+
+  const thrustFrom = new T.Vector3();
+  const thrustTo = new T.Vector3();
+  const thrustDir = new T.Vector3();
+  const negZ = new T.Vector3(0, 0, -1);
+  const camWorld = new T.Vector3();
+
+  return {
+    root,
+    triggerWaterWheel({ x = 0, z = -2.25, clockwise = true } = {}) {
+      wheelTimer = 0.62;
+      wheelClockwise = clockwise !== false;
+      wheelGroup.position.set(x, 1.24, z);
+      wheelGroup.rotation.set(0.18, wheelClockwise ? 0.28 : -0.28, 0);
+      wheelGroup.visible = true;
+    },
+    triggerThrust({ fromX = 0, fromZ = 0, toX = 0, toZ = -3.6, interrupted = false } = {}) {
+      thrustTimer = 0.44;
+      thrustInterrupted = Boolean(interrupted);
+      thrustFrom.set(fromX, 1.16, fromZ - 0.42);
+      thrustTo.set(toX, 1.22, toZ);
+      thrustGroup.visible = true;
+    },
+    triggerParry({ x = 0, z = -1.9 } = {}) {
+      parryTimer = 0.42;
+      parryWaveMesh.position.set(x, 1.24, z);
+      parryWaveMesh.visible = true;
+    },
+    triggerBreathSurge({ x = 0, z = 0 } = {}) {
+      surgeTimer = 0.72;
+      ultGroup.position.set(x, 1.24, z - 1.95);
+      ultGroup.visible = true;
+    },
+    reset() {
+      wheelTimer = 0;
+      thrustTimer = 0;
+      parryTimer = 0;
+      surgeTimer = 0;
+      footworkFade = 0;
+      wheelGroup.visible = false;
+      thrustGroup.visible = false;
+      hazardRingMesh.visible = false;
+      parryWaveMesh.visible = false;
+      ultGroup.visible = false;
+      footworkRing.visible = false;
+    },
+    update({ battle, active = false, camera = null, nowSec = 0, dt = 0.016 } = {}) {
+      if (!active || !battle) {
+        wheelGroup.visible = false;
+        thrustGroup.visible = false;
+        hazardRingMesh.visible = false;
+        parryWaveMesh.visible = false;
+        ultGroup.visible = false;
+        footworkRing.visible = false;
+        return;
+      }
+
+      if (camera) {
+        camera.getWorldPosition(camWorld);
+      }
+
+      // 1. Update 3D Water Wheel
+      if (wheelTimer > 0) {
+        wheelTimer = Math.max(0, wheelTimer - dt);
+        const p = 1 - wheelTimer / 0.62;
+        const spinSign = wheelClockwise ? -1 : 1;
+        wheelTorus.rotation.z = spinSign * p * Math.PI * 3.4;
+        wheelFoam.rotation.z = spinSign * p * Math.PI * 4.2;
+        const s = 0.78 + Math.sin(Math.min(1, p * 1.4) * Math.PI * 0.5) * 0.42;
+        wheelGroup.scale.setScalar(s);
+        const alpha = p < 0.7 ? 1 : (1 - p) / 0.3;
+        wheelTorusMat.opacity = alpha * 0.56;
+        wheelFoamMat.opacity = alpha * 0.44;
+        wheelGroup.visible = wheelTimer > 0.005;
+      } else {
+        wheelGroup.visible = false;
+      }
+
+      // 2. Update 3D 9.2m Piercing Spear + 3 Ripple Rings
+      if (thrustTimer > 0) {
+        thrustTimer = Math.max(0, thrustTimer - dt);
+        const p = 1 - thrustTimer / 0.44;
+        thrustDir.subVectors(thrustTo, thrustFrom);
+        const fullLen = Math.max(0.6, thrustDir.length());
+        thrustDir.normalize();
+        const curLen = fullLen * Math.min(1, p * 3.2);
+        spearMesh.position.copy(thrustFrom);
+        spearMesh.quaternion.setFromUnitVectors(negZ, thrustDir);
+        spearMesh.scale.set(1 - p * 0.35, 1 - p * 0.35, curLen);
+        const accent = thrustInterrupted ? '#ffd878' : '#4ae4ff';
+        spearMat.color.set(accent);
+        spearMat.opacity = (1 - p) * 0.62;
+
+        for (let i = 0; i < rippleRings.length; i++) {
+          const ring = rippleRings[i];
+          const frac = 0.38 + i * 0.3;
+          ring.position.copy(thrustFrom).addScaledVector(thrustDir, fullLen * frac);
+          if (camera) ring.lookAt(camWorld);
+          const rp = clamp((p - i * 0.09) / 0.78, 0, 1);
+          ring.scale.setScalar(0.55 + rp * (thrustInterrupted ? 1.45 : 1.08));
+          ring.material.color.set(thrustInterrupted && i === 2 ? '#ffd878' : '#8cf2ff');
+          ring.material.opacity = rp > 0 ? (1 - rp) * 0.56 : 0;
+        }
+        thrustGroup.visible = thrustTimer > 0.005;
+      } else {
+        thrustGroup.visible = false;
+      }
+
+      // 3. Update Eye-Level Contracting Crimson Enemy Hazard Ring
+      const urgentHazard =
+        battle.hazards && battle.hazards.length > 0
+          ? battle.hazards.reduce((best, h) => (!best || h.remaining < best.remaining ? h : best), null)
+          : null;
+      const hazardSource = urgentHazard
+        ? battle.enemies.find(e => e.id === urgentHazard.source && e.hp > 0)
+        : null;
+      if (urgentHazard && hazardSource) {
+        hazardRingMesh.visible = true;
+        hazardRingMesh.position.set(hazardSource.x, 1.2 * hazardSource.size, hazardSource.z);
+        if (camera) hazardRingMesh.lookAt(camWorld);
+        const ratio = clamp(urgentHazard.remaining / Math.max(0.2, urgentHazard.duration), 0, 1);
+        hazardRingMesh.scale.setScalar(0.36 + ratio * 1.08);
+        hazardRingMesh.rotation.z = nowSec * 5;
+        hazardMat.color.set(ratio < 0.32 ? '#ff9db0' : '#ff3355');
+        hazardMat.opacity = 0.45 + (1 - ratio) * 0.5;
+      } else {
+        hazardRingMesh.visible = false;
+      }
+
+      // 4. Update Golden Parry Shockwave
+      if (parryTimer > 0) {
+        parryTimer = Math.max(0, parryTimer - dt);
+        const p = 1 - parryTimer / 0.42;
+        if (camera) parryWaveMesh.lookAt(camWorld);
+        parryWaveMesh.scale.setScalar(0.55 + p * 2.35);
+        parryMat.opacity = (1 - p) * 0.92;
+        parryWaveMesh.visible = parryTimer > 0.005;
+      } else {
+        parryWaveMesh.visible = false;
+      }
+
+      // 5. Update 3D Ultimate Water Dragon Spiral / Breath Surge Vortex
+      if (battle.musouTime >= 0) {
+        const mp = clamp(battle.musouTime / Math.max(0.5, battle.invincible || 2.2), 0, 1);
+        ultGroup.visible = true;
+        ultGroup.position.set(battle.player.x, 1.28, battle.player.z - 1.65 - mp * 2.1);
+        dragonHelix.visible = true;
+        dragonHelix.rotation.set(nowSec * 3.2, nowSec * 2.1, nowSec * 4.4);
+        dragonHelix.scale.setScalar(0.92 + Math.sin(mp * Math.PI) * 0.42);
+        dragonMat.opacity = 0.54;
+        surgeHalo.rotation.z = -nowSec * 4.5;
+        surgeHalo.scale.setScalar(1.12 + Math.sin(nowSec * 8) * 0.14);
+        surgeMat.opacity = 0.44;
+      } else if (surgeTimer > 0) {
+        surgeTimer = Math.max(0, surgeTimer - dt);
+        const sp = 1 - surgeTimer / 0.72;
+        ultGroup.visible = surgeTimer > 0.005;
+        ultGroup.position.set(battle.player.x, 1.02 + sp * 0.48, battle.player.z - 1.9);
+        dragonHelix.visible = false;
+        surgeHalo.rotation.z = nowSec * 5.2;
+        surgeHalo.scale.setScalar(0.76 + sp * 0.58);
+        surgeMat.opacity = (1 - sp) * 0.52;
+      } else {
+        ultGroup.visible = false;
+      }
+
+      // 6. Update Lower-FOV 3D Footwork Steering Compass
+      if (battle.steerActive) {
+        footworkFade = Math.min(1, footworkFade + dt * 10);
+      } else {
+        footworkFade = Math.max(0, footworkFade - dt * 4);
+      }
+      footworkRing.visible = footworkFade > 0.02;
+      if (footworkRing.visible) {
+        footworkRing.position.set(
+          battle.player.x + battle.steerX * 0.24,
+          1.18,
+          (battle.player.z || 0) - 1.92 - (battle.steerForward || 0) * 0.22,
+        );
+        footworkRing.rotation.z = Math.atan2(-battle.steerX, battle.steerForward || 0.001);
+        footworkMat.opacity = footworkFade * 0.68;
+      }
+    },
+    stats: () => ({
+      wheelVisible: wheelGroup.visible,
+      thrustVisible: thrustGroup.visible,
+      hazardRingVisible: hazardRingMesh.visible,
+      parryVisible: parryWaveMesh.visible,
+      ultVisible: ultGroup.visible,
+      footworkVisible: footworkRing.visible,
     }),
   };
 }
