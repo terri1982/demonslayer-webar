@@ -8,9 +8,9 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b131e'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23a5f1ec' stroke-width='2'/%3E%3C/svg%3E">
   <title>鬼灭之刃 · 夜巡街道 WebAR 空间版</title>
   <script src="./vendor/effekseer/effekseer.js"></script>
-  <script type="module" crossorigin src="./vendor/app-Jw4UW_Mu.js"></script>
+  <script type="module" crossorigin src="./vendor/app-CjOkMW15.js"></script>
   <link rel="modulepreload" crossorigin href="./vendor/three-r165.js">
-  <link rel="stylesheet" crossorigin href="./vendor/style-DiIwE6yo.css">
+  <link rel="stylesheet" crossorigin href="./vendor/style-D9eM-jBS.css">
 </head>
 <body>
   <!-- 底层手机后置实景视频流（仅手持模式使用；AR 眼镜模式绝不调用 getUserMedia） -->
@@ -123,10 +123,10 @@
 
       <div id="message" role="status"></div>
 
-      <div id="technique" hidden>
-        <small>水之呼吸 · 贰之型</small>
-        <strong>水　车</strong>
-        <span>与炭治郎 · 合击</span>
+      <div id="technique" hidden data-theme="waterWheel">
+        <small id="technique-eyebrow">水之呼吸 · 贰之型</small>
+        <strong id="technique-title">水　车</strong>
+        <span id="technique-sub">与炭治郎 · 合击</span>
       </div>
 
       <div id="boss-hud" hidden>
@@ -141,19 +141,23 @@
         </div>
 
         <div class="right-controls">
-          <button id="musou" type="button" aria-disabled="true">
-            <span>水车</span>
+          <button id="musou" type="button" aria-disabled="true" aria-label="全集中水车合击">
+            <span>合击</span>
             <small id="energy-label">0%</small>
             <svg viewBox="0 0 100 100" aria-hidden="true">
               <circle cx="50" cy="50" r="45" />
               <circle id="energy-ring" cx="50" cy="50" r="45" />
             </svg>
           </button>
-          <button id="heavy" type="button">
-            <span id="heavy-name">①</span>
-            <small id="heavy-stage">突进斩</small>
+          <button id="water-wheel" type="button" aria-label="贰之型·水车（群攻旋斩）">
+            <span id="wheel-name">贰</span>
+            <small id="wheel-stage">水车</small>
           </button>
-          <button id="light" type="button">
+          <button id="heavy" type="button" aria-label="柒之型·雫波纹击刺（直线破招）">
+            <span id="heavy-name">柒</span>
+            <small id="heavy-stage">突刺</small>
+          </button>
+          <button id="light" type="button" aria-label="日轮刀普攻连斩">
             <span id="light-name">①</span>
             <small id="light-stage">横斩</small>
           </button>
