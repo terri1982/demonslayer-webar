@@ -1188,9 +1188,11 @@ export function createSpatialCombatVfx(worldRoot) {
 
   let wheelTimer = 0;
   let wheelClockwise = true;
+  let wheelBaseX = 0;
   let wheelBaseZ = -2.25;
   let thrustTimer = 0;
   let thrustInterrupted = false;
+  let thrustGlassesLatched = false;
   let parryTimer = 0;
   let surgeTimer = 0;
   let footworkFade = 0;
@@ -1200,13 +1202,19 @@ export function createSpatialCombatVfx(worldRoot) {
   const thrustDir = new T.Vector3();
   const spearSpinQuat = new T.Quaternion();
   const negZ = new T.Vector3(0, 0, -1);
+  const worldUp = new T.Vector3(0, 1, 0);
   const camWorld = new T.Vector3();
+  const camLocal = new T.Vector3();
+  const camFwd = new T.Vector3();
+  const camRight = new T.Vector3();
+  const tmpTargetWorld = new T.Vector3();
 
   return {
     root,
     triggerWaterWheel({ x = 0, z = -2.25, clockwise = true } = {}) {
       wheelTimer = 0.78;
       wheelClockwise = clockwise !== false;
+      wheelBaseX = x;
       wheelBaseZ = z;
       wheelGroup.position.set(x, 1.02, z + 0.12);
       wheelGroup.rotation.set(0.12, wheelClockwise ? 0.22 : -0.22, 0);
@@ -1217,6 +1225,7 @@ export function createSpatialCombatVfx(worldRoot) {
     triggerThrust({ fromX = 0, fromZ = 0, toX = 0, toZ = -3.6, interrupted = false } = {}) {
       thrustTimer = 0.72;
       thrustInterrupted = Boolean(interrupted);
+      thrustGlassesLatched = false;
       // Originate from right-hand Nichirin stance (x + 0.24m, y = 1.18m, z - 1.15m) so perspective projects a razor-sharp diagonal lance!
       thrustFrom.set(fromX + 0.24, 1.18, fromZ - 1.15);
       thrustTo.set(toX, 1.22, toZ);
@@ -1245,7 +1254,7 @@ export function createSpatialCombatVfx(worldRoot) {
       ultGroup.visible = false;
       footworkRing.visible = false;
     },
-    update({ battle, active = false, camera = null, nowSec = 0, dt = 0.016 } = {}) {
+    update({ battle, active = false, camera = null, glassesMode = false, nowSec = 0, dt = 0.016 } = {}) {
       if (!active || !battle) {
         wheelGroup.visible = false;
         thrustGroup.visible = false;
@@ -1258,6 +1267,12 @@ export function createSpatialCombatVfx(worldRoot) {
 
       if (camera) {
         camera.getWorldPosition(camWorld);
+        camLocal.copy(camWorld);
+        worldRoot.worldToLocal(camLocal);
+        camera.getWorldDirection(camFwd);
+        camRight.crossVectors(camFwd, worldUp);
+        if (camRight.lengthSq() < 1e-5) camRight.set(1, 0, 0);
+        else camRight.normalize();
       }
 
       // 1. Update 3D Giant Vertical Rolling Water Wheel (贰之型·水车)
@@ -1265,11 +1280,24 @@ export function createSpatialCombatVfx(worldRoot) {
         wheelTimer = Math.max(0, wheelTimer - dt);
         const p = 1 - wheelTimer / 0.78;
         const spinSign = wheelClockwise ? -1 : 1;
-        wheelGroup.position.z = wheelBaseZ + 0.16 - p * 0.34;
+        if (glassesMode && camera) {
+          // Frame inside XREAL Air 2 Ultra's 23-deg vertical optical sweet spot (-0.15m below reticle, never clipped):
+          const wheelDist = 2.15 + p * 0.34;
+          tmpTargetWorld.copy(camWorld).addScaledVector(camFwd, wheelDist);
+          tmpTargetWorld.y -= 0.15;
+          worldRoot.worldToLocal(tmpTargetWorld);
+          wheelGroup.position.copy(tmpTargetWorld);
+          wheelGroup.lookAt(camWorld);
+          wheelGroup.rotateY(wheelClockwise ? 0.22 : -0.22);
+        } else {
+          wheelGroup.position.set(wheelBaseX, 1.02, wheelBaseZ + 0.16 - p * 0.34);
+          wheelGroup.rotation.set(0.12, wheelClockwise ? 0.22 : -0.22, 0);
+        }
         wheelDiscA.rotation.z = spinSign * p * Math.PI * 3.8;
         wheelDiscB.rotation.z = spinSign * (p * Math.PI * 4.5 + 0.55);
         wheelTorus.rotation.z = spinSign * p * Math.PI * 3.4;
-        const s = 0.84 + Math.sin(Math.min(1, p * 1.35) * Math.PI * 0.5) * 0.24;
+        const baseScale = glassesMode ? 0.72 : 0.84;
+        const s = baseScale + Math.sin(Math.min(1, p * 1.35) * Math.PI * 0.5) * 0.22;
         wheelGroup.scale.setScalar(s);
         wheelSplash.position.y = -0.96 / Math.max(0.6, s);
         wheelSplash.scale.setScalar(0.72 + p * 0.85);
@@ -1277,7 +1305,7 @@ export function createSpatialCombatVfx(worldRoot) {
         wheelDiscMatA.opacity = alpha * 0.86;
         wheelDiscMatB.opacity = alpha * 0.62;
         wheelTorusMat.opacity = alpha * 0.78;
-        wheelSplashMat.opacity = alpha * (1 - p * 0.5) * 0.62;
+        wheelSplashMat.opacity = glassesMode ? 0 : alpha * (1 - p * 0.5) * 0.62;
         wheelGroup.visible = wheelTimer > 0.005;
       } else {
         wheelGroup.visible = false;
@@ -1285,6 +1313,27 @@ export function createSpatialCombatVfx(worldRoot) {
 
       // 2. Update 3D 9.2m Straight-Line Piercing Water Lance + 4 Concentric '雫波纹' Droplet Ripples (柒之型·雫波纹击刺)
       if (thrustTimer > 0) {
+        if (glassesMode && camera && !thrustGlassesLatched) {
+          thrustGlassesLatched = true;
+          // 1st-person AR Glasses stance: launch from wearer's lower-right sword hand into optical sweet spot!
+          tmpTargetWorld.copy(camWorld)
+            .addScaledVector(camFwd, 0.98)
+            .addScaledVector(camRight, 0.24);
+          tmpTargetWorld.y -= 0.16;
+          worldRoot.worldToLocal(tmpTargetWorld);
+          thrustFrom.copy(tmpTargetWorld);
+
+          const rawDist = clamp(Math.hypot(thrustTo.x - camLocal.x, thrustTo.z - camLocal.z), 2.6, 6.2);
+          tmpTargetWorld.copy(camWorld).addScaledVector(camFwd, rawDist);
+          tmpTargetWorld.y -= 0.05;
+          worldRoot.worldToLocal(tmpTargetWorld);
+          // Blend horizontal aim toward locked demon within +-0.42m of gaze center so lance always stays inside 46-deg FOV:
+          thrustTo.set(
+            tmpTargetWorld.x + clamp(thrustTo.x - tmpTargetWorld.x, -0.45, 0.45),
+            tmpTargetWorld.y,
+            tmpTargetWorld.z,
+          );
+        }
         thrustTimer = Math.max(0, thrustTimer - dt);
         const p = 1 - thrustTimer / 0.72;
         thrustDir.subVectors(thrustTo, thrustFrom);

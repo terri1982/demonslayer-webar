@@ -1271,6 +1271,7 @@ renderer.setAnimationLoop((now, xrFrame) => {
     battle,
     active: mode === 'battle',
     camera: activeCamera,
+    glassesMode: isGlasses || xrPresenting,
     nowSec: now * 0.001,
     dt,
   });
