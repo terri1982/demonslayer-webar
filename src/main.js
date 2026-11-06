@@ -1219,7 +1219,7 @@ renderer.setAnimationLoop((now, xrFrame) => {
     menuProgress,
     gazeDwellMs: spatialInput.getGazeDwellMs(),
     deviceModel: caps.deviceModel || '',
-    handTracking: Boolean(caps.handTracking),
+    handTracking: Boolean(inputState?.handSupported ?? caps.handTracking),
     handActive: handRayState.active || Boolean(inputState?.handActive),
     gestureHint,
     camera: activeCamera,
