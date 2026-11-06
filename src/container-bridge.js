@@ -606,6 +606,7 @@ export function createSpatialInputBridge({
   let lastProgressTargetId = null;
   let lastMenuSelectAt = -10000;
   let lastHandActiveAt = -10000;
+  let lastTapAt = -10000;
   let squeezeDownAt = 0;
   let lastGestureSummary = '';
   let handGestureCount = 0;
@@ -817,16 +818,51 @@ export function createSpatialInputBridge({
       return;
     }
 
+    // Axial Cone Filter (|tan| <= 0.58, ~±30 deg) + Rapid Double-Tap Thrust (<= 255ms):
+    // Eliminates oblique 40..50 deg thumb-flick crosstalk between Water Wheel (swipe-up) & Thrust (swipe-left/right)!
+    const OBLIQUE_TAN = 0.58;
+    const hasVector = ev.dx !== undefined || ev.dy !== undefined;
+    const ax = Math.abs(Number(ev.dx) || 0);
+    const ay = Math.abs(Number(ev.dy) || 0);
+    const vectorValid = hasVector && ax + ay > 0.015;
+
     if (type === 'tap') {
+      const eventTs = Number.isFinite(Number(ev.timestampMs)) ? Number(ev.timestampMs) : nowMs();
+      if (eventTs - lastTapAt >= 45 && eventTs - lastTapAt <= 255) {
+        lastTapAt = -10000;
+        lastGestureSummary = 'trackpad:double-tap->thrust';
+        onThrust?.({ direction: null, source: 'trackpad-double-tap' });
+        return;
+      }
+      lastTapAt = eventTs;
       onSlash?.({ direction: 'right', speed: 1, source: 'trackpad-tap' });
     } else if (type === 'swipe-up') {
+      lastTapAt = -10000;
+      if (vectorValid && ax > OBLIQUE_TAN * ay) {
+        lastGestureSummary = 'trackpad:oblique-up->slash';
+        onSlash?.({ direction: 'up', speed: 1.15, source: 'trackpad-oblique-slash' });
+        return;
+      }
       onWaterWheel?.({ clockwise: true, source: 'trackpad-swipe-up' });
     } else if (type === 'swipe-left' || type === 'swipe-right') {
+      lastTapAt = -10000;
+      const latDir = type === 'swipe-left' ? 'left' : 'right';
+      if (vectorValid && ay > OBLIQUE_TAN * ax) {
+        lastGestureSummary = `trackpad:oblique-${latDir}->slash`;
+        onSlash?.({ direction: latDir, speed: 1.15, source: 'trackpad-oblique-slash' });
+        return;
+      }
       onThrust?.({
-        direction: type === 'swipe-left' ? 'left' : 'right',
+        direction: latDir,
         source: `trackpad-${type}`,
       });
     } else if (type === 'swipe-down') {
+      lastTapAt = -10000;
+      if (vectorValid && ax > 0.65 * ay) {
+        lastGestureSummary = 'trackpad:oblique-down->slash';
+        onSlash?.({ direction: 'down', speed: 1.15, source: 'trackpad-oblique-slash' });
+        return;
+      }
       onUltimate?.({ source: 'trackpad-swipe-down' });
     }
   }

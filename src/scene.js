@@ -217,9 +217,11 @@ export async function createAlly(worldRoot, renderer, onProgress) {
   let vfx = null;
   let recover = null;
   let attackTime = -1;
+  let miniWheelTime = -1;
+  let thrustAnimTime = -1;
   let showingSwing = false;
 
-  function play(name, fade = 0.12) {
+  function play(name, fade = 0.12, enableBladeTrail = true) {
     if (model.name === name) return;
     const clip = gltf.animations.find(c => c.name === name) || gltf.animations.find(c => c.name === 'CombatIdle');
     const previous = model.action;
@@ -235,7 +237,11 @@ export async function createAlly(worldRoot, renderer, onProgress) {
     }
     model.action = next;
     model.name = name;
-    vfx?.begin('tanjiro');
+    if (enableBladeTrail) {
+      vfx?.begin('tanjiro');
+    } else {
+      vfx?.clear();
+    }
   }
 
   play('CombatIdle', 0);
@@ -264,6 +270,8 @@ export async function createAlly(worldRoot, renderer, onProgress) {
     actor.rotation.y = g.ally.yaw;
     const casting = g.musouTime >= 0;
     if (casting) {
+      miniWheelTime = -1;
+      thrustAnimTime = -1;
       if (model.name !== 'WaterWheel') {
         play('WaterWheel', 0.055);
         recover = null;
@@ -275,6 +283,63 @@ export async function createAlly(worldRoot, renderer, onProgress) {
       model.mixer.update(0);
       const p = rootAt(g.musouTime);
       gltf.scene.position.set(-p.x, 0, -p.z);
+    } else if (miniWheelTime >= 0) {
+      // Dedicated Skill 1 (贰之型·水车): compact 0.74s vertical somersault slice (0.60s -> 1.66s of WaterWheel clip)
+      showingSwing = false;
+      miniWheelTime += dt;
+      const miniDur = 0.74;
+      if (miniWheelTime >= miniDur) {
+        miniWheelTime = -1;
+        recover = { x: 0, z: 0, time: 0 };
+        play('CombatIdle', 0.12);
+        gltf.scene.position.set(0, 0, 0);
+      } else {
+        if (model.name !== 'WaterWheel') {
+          play('WaterWheel', 0.045);
+          recover = null;
+          attackTime = -1;
+        }
+        const u = clamp(miniWheelTime / miniDur, 0, 1);
+        const clipTime = Math.min(wheel.duration - 1e-6, 0.6 + u * 1.06);
+        model.action.setEffectiveTimeScale(1);
+        model.mixer.update(dt);
+        model.action.time = clipTime;
+        model.action.paused = false;
+        model.mixer.update(0);
+        const p = rootAt(clipTime);
+        const arcForward = Math.sin(u * Math.PI) * 0.36;
+        gltf.scene.position.set(-p.x, 0, -p.z + arcForward);
+      }
+    } else if (thrustAnimTime >= 0) {
+      // Dedicated Skill 2 (柒之型·雫波纹击刺): crisp linear forward stab (Heavy1 thrust window ONLY, never Heavy2/Heavy3!)
+      showingSwing = false;
+      thrustAnimTime += dt;
+      const thrustDur = 0.5;
+      if (thrustAnimTime >= thrustDur || !roots.Heavy1) {
+        thrustAnimTime = -1;
+        recover = { x: 0, z: 0, time: 0 };
+        play('CombatIdle', 0.1);
+        gltf.scene.position.set(0, 0, 0);
+      } else {
+        if (model.name !== 'Heavy1') {
+          play('Heavy1', 0.04, false);
+          recover = null;
+          attackTime = -1;
+        }
+        vfx?.clear();
+        const u = clamp(thrustAnimTime / thrustDur, 0, 1);
+        // Rapid thrust extension over first 42%, brief hold, crisp snap back:
+        const stabPhase = u < 0.42 ? u / 0.42 : 1 - ((u - 0.42) / 0.58) * 0.25;
+        const clipTime = Math.min(model.action.getClip().duration - 1e-6, 0.07 + clamp(stabPhase, 0, 1) * 0.44);
+        model.action.setEffectiveTimeScale(1);
+        model.mixer.update(dt);
+        model.action.time = clipTime;
+        model.action.paused = false;
+        model.mixer.update(0);
+        const p = rootOn(roots.Heavy1, clipTime);
+        const lungeForward = Math.sin(Math.pow(u, 0.72) * Math.PI) * 0.64;
+        gltf.scene.position.set(-p.x, 0, -p.z + lungeForward);
+      }
     } else {
       const swing = g.swing;
       showingSwing = !!(swing?.clip && roots[swing.clip]);
@@ -347,9 +412,22 @@ export async function createAlly(worldRoot, renderer, onProgress) {
       return Math.hypot(p.x, p.z) / Math.max(0.01, Math.hypot(end.x, end.z));
     },
     attack() {
-      if (model.name === 'WaterWheel' || showingSwing) return;
+      if (model.name === 'WaterWheel' || miniWheelTime >= 0 || thrustAnimTime >= 0 || showingSwing) return;
       attackTime = 0;
       play('Light1');
+    },
+    spinWaterWheel() {
+      thrustAnimTime = -1;
+      attackTime = -1;
+      miniWheelTime = 0;
+      play('WaterWheel', 0.045);
+    },
+    thrustLunge() {
+      miniWheelTime = -1;
+      attackTime = -1;
+      thrustAnimTime = 0;
+      vfx?.clear();
+      play('Heavy1', 0.04, false);
     },
     draw(camera) {
       vfx?.draw(camera);
@@ -359,6 +437,8 @@ export async function createAlly(worldRoot, renderer, onProgress) {
       model.name = '';
       recover = null;
       attackTime = -1;
+      miniWheelTime = -1;
+      thrustAnimTime = -1;
       gltf.scene.position.set(0, 0, 0);
       actor.position.set(pose.x, 0, pose.z);
       actor.rotation.y = pose.yaw;
@@ -367,6 +447,8 @@ export async function createAlly(worldRoot, renderer, onProgress) {
     },
     stats: () => ({
       clip: model.name,
+      miniWheelActive: miniWheelTime >= 0,
+      thrustActive: thrustAnimTime >= 0,
       position: actor.position.toArray(),
       revision: manifest.revision,
       vfx: vfx?.stats(),
@@ -408,17 +490,23 @@ export function createSlashArc(worldRoot) {
   return {
     group: slash,
     update(camera, slashTime, slashHeavy, active, slashDir = 'right') {
+      // NEVER render curved blade arc on 柒之型·雫波纹击刺 ('thrust') so Thrust is 100% linear water-lance + ripples!
+      if (slashDir === 'thrust') {
+        slash.visible = false;
+        return;
+      }
       slash.visible = active && slashTime > 0;
       if (!slash.visible) return;
       camera.getWorldPosition(worldPos);
       camera.getWorldDirection(forward);
-      worldPos.addScaledVector(forward, slashDir === 'thrust' ? 1.38 : 1.15);
+      worldPos.addScaledVector(forward, slashDir?.startsWith('spin') ? 1.24 : 1.15);
       worldRoot.worldToLocal(worldPos);
       slash.position.copy(worldPos);
 
       worldRoot.getWorldQuaternion(invRootQuat).invert();
       camera.getWorldQuaternion(localQuat).premultiply(invRootQuat);
-      const duration = slashDir?.startsWith('spin') ? 0.38 : 0.25;
+      const isSpin = Boolean(slashDir?.startsWith('spin'));
+      const duration = isSpin ? 0.56 : 0.25;
       const t = clamp(1 - slashTime / duration, 0, 1);
 
       let baseAngle = -0.5;
@@ -434,31 +522,30 @@ export function createSlashArc(worldRoot) {
         sweep = -1.75;
       } else if (slashDir === 'spin-cw') {
         baseAngle = 0;
-        sweep = -Math.PI * 2.2;
+        sweep = -Math.PI * 3.1;
       } else if (slashDir === 'spin-ccw') {
         baseAngle = 0;
-        sweep = Math.PI * 2.2;
-      } else if (slashDir === 'thrust') {
-        baseAngle = -0.15;
-        sweep = 0.9;
+        sweep = Math.PI * 3.1;
       }
       rollQuat.setFromAxisAngle(zAxis, baseAngle + t * sweep);
       localQuat.multiply(rollQuat);
       slash.quaternion.copy(localQuat);
-      const scaleBase = slashDir?.startsWith('spin')
-        ? 1.34
-        : slashDir === 'thrust'
-          ? 0.72 + t * 0.62
-          : slashHeavy
-            ? 1.22
-            : 0.96;
+      const scaleBase = isSpin ? 1.42 : slashHeavy ? 1.22 : 0.96;
       slash.scale.setScalar(scaleBase);
       for (let i = 0; i < slash.children.length; i++) {
         const m = slash.children[i];
         m.material.color.set(
-          slashDir?.startsWith('spin') ? (i === 0 ? '#ffffff' : '#55e7ff') : i === 0 ? '#e5ffff' : '#7ddfe8',
+          isSpin
+            ? i === 0
+              ? '#ffffff'
+              : i === 1
+                ? '#38bdf8'
+                : '#0284c7'
+            : i === 0
+              ? '#e5ffff'
+              : '#7ddfe8',
         );
-        m.material.opacity = (1 - t) * 0.88;
+        m.material.opacity = (1 - t) * (isSpin ? 0.92 : 0.86);
       }
     },
   };
@@ -730,67 +817,303 @@ export function createHandRayIndicator(worldRoot) {
 // Strictly mounted under worldRoot (camera.children.length === 0).
 // Pre-allocates <= 11 lightweight AdditiveBlending meshes (0 draw calls when idle) so every skill,
 // enemy crimson telegraph, and footwork steering input has unmistakable 1:1 3D feedback inside XREAL's 25-deg vertical FOV.
+function buildWaterWheelTexture() {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const cx = 256;
+  const cy = 256;
+  g.clearRect(0, 0, 512, 512);
+
+  // Deep ocean sapphire & azure radial water current band:
+  const ringGrad = g.createRadialGradient(cx, cy, 118, cx, cy, 246);
+  ringGrad.addColorStop(0.0, 'rgba(2, 132, 199, 0)');
+  ringGrad.addColorStop(0.26, 'rgba(14, 165, 233, 0.42)');
+  ringGrad.addColorStop(0.62, 'rgba(29, 78, 216, 0.82)');
+  ringGrad.addColorStop(0.84, 'rgba(56, 189, 248, 0.95)');
+  ringGrad.addColorStop(0.95, 'rgba(240, 252, 255, 0.92)');
+  ringGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+  g.fillStyle = ringGrad;
+  g.beginPath();
+  g.arc(cx, cy, 248, 0, Math.PI * 2);
+  g.fill();
+
+  // 6 Ukiyo-e swirling white sea-foam blades + inner water wheel spokes:
+  for (let i = 0; i < 6; i++) {
+    const base = (i / 6) * Math.PI * 2;
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(base);
+
+    g.strokeStyle = 'rgba(240, 252, 255, 0.95)';
+    g.lineWidth = 13;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.arc(0, 0, 206, -0.18, 0.68);
+    g.stroke();
+
+    g.strokeStyle = 'rgba(56, 189, 248, 0.88)';
+    g.lineWidth = 8;
+    g.beginPath();
+    g.arc(0, 0, 168, 0.04, 0.78);
+    g.stroke();
+
+    // Sweeping foam crest fin:
+    g.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    g.beginPath();
+    g.moveTo(190, -28);
+    g.quadraticCurveTo(242, 8, 224, 58);
+    g.quadraticCurveTo(198, 22, 176, -8);
+    g.closePath();
+    g.fill();
+
+    // Sea spray droplets:
+    for (let d = 0; d < 4; d++) {
+      const ang = 0.22 + d * 0.17;
+      const rad = 228 + (d % 2) * 14;
+      g.beginPath();
+      g.arc(Math.cos(ang) * rad, Math.sin(ang) * rad, 4.5 - d * 0.7, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+  }
+
+  const tex = new T.CanvasTexture(c);
+  tex.colorSpace = T.SRGBColorSpace;
+  return tex;
+}
+
+function buildThrustSpiralTexture() {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.clearRect(0, 0, 256, 256);
+
+  const vGrad = g.createLinearGradient(0, 0, 0, 256);
+  vGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+  vGrad.addColorStop(0.18, 'rgba(180, 252, 255, 0.55)');
+  vGrad.addColorStop(0.78, 'rgba(240, 255, 255, 0.96)');
+  vGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  g.strokeStyle = vGrad;
+  g.lineCap = 'round';
+  for (let i = -2; i < 6; i++) {
+    g.lineWidth = i % 2 === 0 ? 10 : 5;
+    g.beginPath();
+    g.moveTo(i * 56, 0);
+    g.lineTo(i * 56 + 112, 256);
+    g.stroke();
+  }
+  const tex = new T.CanvasTexture(c);
+  tex.colorSpace = T.SRGBColorSpace;
+  tex.wrapS = T.RepeatWrapping;
+  tex.wrapT = T.ClampToEdgeWrapping;
+  return tex;
+}
+
+function buildThrustCoreTexture() {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  // Cylinder V=0 is bottom (near player), V=1 is top (far tip at enemy): fade smoothly at near base!
+  const grad = g.createLinearGradient(0, 256, 0, 0);
+  grad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
+  grad.addColorStop(0.16, 'rgba(224, 255, 255, 0.72)');
+  grad.addColorStop(0.75, 'rgba(255, 255, 255, 0.98)');
+  grad.addColorStop(0.96, 'rgba(255, 255, 255, 1.0)');
+  grad.addColorStop(1.0, 'rgba(255, 255, 255, 0.2)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 256);
+  const tex = new T.CanvasTexture(c);
+  tex.colorSpace = T.SRGBColorSpace;
+  return tex;
+}
+
+function buildThrustStarTexture() {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const cx = 128;
+  const cy = 128;
+  g.clearRect(0, 0, 256, 256);
+
+  // Soft central water-droplet glow (strictly zero edge alpha so never a square!):
+  const glow = g.createRadialGradient(cx, cy, 2, cx, cy, 74);
+  glow.addColorStop(0.0, 'rgba(255, 255, 255, 0.98)');
+  glow.addColorStop(0.28, 'rgba(186, 252, 255, 0.65)');
+  glow.addColorStop(0.68, 'rgba(56, 189, 248, 0.16)');
+  glow.addColorStop(1.0, 'rgba(56, 189, 248, 0)');
+  g.fillStyle = glow;
+  g.beginPath();
+  g.arc(cx, cy, 76, 0, Math.PI * 2);
+  g.fill();
+
+  // 4 razor-sharp needle cross-flares + 4 delicate diagonal droplet needles:
+  for (let i = 0; i < 8; i++) {
+    const major = i % 2 === 0;
+    const len = major ? 118 : 62;
+    const halfW = major ? 6.5 : 3.2;
+    g.save();
+    g.translate(cx, cy);
+    g.rotate((i * Math.PI) / 4);
+    const rayGrad = g.createLinearGradient(0, -len, 0, len);
+    rayGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
+    rayGrad.addColorStop(0.38, 'rgba(185, 252, 255, 0.85)');
+    rayGrad.addColorStop(0.5, 'rgba(255, 255, 255, 1)');
+    rayGrad.addColorStop(0.62, 'rgba(185, 252, 255, 0.85)');
+    rayGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+    g.fillStyle = rayGrad;
+    g.beginPath();
+    g.moveTo(0, -len);
+    g.quadraticCurveTo(halfW, 0, 0, len);
+    g.quadraticCurveTo(-halfW, 0, 0, -len);
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+
+  const tex = new T.CanvasTexture(c);
+  tex.colorSpace = T.SRGBColorSpace;
+  return tex;
+}
+
 export function createSpatialCombatVfx(worldRoot) {
   const root = new T.Group();
   root.name = 'SpatialCombatVfxPool';
   worldRoot.add(root);
 
-  // 1. 3D Upright Water Wheel ('circle' / 'swipe-up' -> 贰之型·水车): 2 draw calls when active
+  // 1. 3D Giant Vertical Rolling Water Wheel ('circle' / 'swipe-up' -> 贰之型·水车):
+  //    1.76m diameter double-layered painted ocean-foam wheel + glowing azure water tube + floor splash ring
   const wheelGroup = new T.Group();
   wheelGroup.visible = false;
   root.add(wheelGroup);
 
-  const wheelTorusMat = new T.MeshBasicMaterial({
-    color: '#32d9ff',
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: T.AdditiveBlending,
-  });
-  const wheelTorus = new T.Mesh(new T.TorusGeometry(0.64, 0.018, 10, 64), wheelTorusMat);
-  wheelGroup.add(wheelTorus);
-
-  const wheelFoamMat = new T.MeshBasicMaterial({
-    color: '#9cf6ff',
+  const wheelTex = buildWaterWheelTexture();
+  const wheelDiscMatA = new T.MeshBasicMaterial({
+    map: wheelTex,
+    color: '#ffffff',
     transparent: true,
     opacity: 0,
     side: T.DoubleSide,
     depthWrite: false,
     blending: T.AdditiveBlending,
   });
-  const wheelFoam = new T.Mesh(new T.RingGeometry(0.54, 0.578, 56, 1, 0.25, Math.PI * 1.35), wheelFoamMat);
-  wheelGroup.add(wheelFoam);
+  const wheelDiscA = new T.Mesh(new T.PlaneGeometry(1.48, 1.48), wheelDiscMatA);
+  wheelDiscA.rotation.y = 0.22;
+  wheelGroup.add(wheelDiscA);
 
-  // 2. 3D 9.2m Piercing Water Spear + 3 Vertical Ripple Rings ('thrust' -> 柒之型·雫波纹击刺): 4 draw calls when active
+  const wheelDiscMatB = new T.MeshBasicMaterial({
+    map: wheelTex,
+    color: '#7dd3fc',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const wheelDiscB = new T.Mesh(new T.PlaneGeometry(1.3, 1.3), wheelDiscMatB);
+  wheelDiscB.rotation.y = -0.26;
+  wheelDiscB.position.z = 0.06;
+  wheelGroup.add(wheelDiscB);
+
+  const wheelTorusMat = new T.MeshBasicMaterial({
+    color: '#1ca8ff',
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const wheelTorus = new T.Mesh(new T.TorusGeometry(0.7, 0.03, 12, 64), wheelTorusMat);
+  wheelGroup.add(wheelTorus);
+
+  const wheelSplashMat = new T.MeshBasicMaterial({
+    color: '#7dd3fc',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const wheelSplash = new T.Mesh(new T.RingGeometry(0.38, 0.88, 48), wheelSplashMat);
+  wheelSplash.rotation.x = -Math.PI / 2;
+  wheelSplash.position.y = -0.96;
+  wheelGroup.add(wheelSplash);
+
+  // 2. 3D 9.2m Straight-Line Piercing Water Lance + 4 Concentric '雫波纹' Droplet Ripples ('thrust' -> 柒之型·雫波纹击刺):
+  //    Zero curved slash arcs! Sleek off-axis sword-hand water-lance + distance-adaptive concentric pond ripples!
   const thrustGroup = new T.Group();
   thrustGroup.visible = false;
   root.add(thrustGroup);
 
-  const spearGeom = new T.CylinderGeometry(0.0035, 0.016, 1, 8, 1, true);
-  spearGeom.rotateX(-Math.PI / 2);
-  spearGeom.translate(0, 0, -0.5);
+  const spearCoreGeom = new T.CylinderGeometry(0.0045, 0.011, 1, 12, 1, true);
+  spearCoreGeom.rotateX(-Math.PI / 2);
+  spearCoreGeom.translate(0, 0, -0.5);
   const spearMat = new T.MeshBasicMaterial({
-    color: '#4ae4ff',
+    map: buildThrustCoreTexture(),
+    color: '#ecffff',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    depthTest: false,
+    blending: T.AdditiveBlending,
+  });
+  const spearMesh = new T.Mesh(spearCoreGeom, spearMat);
+  thrustGroup.add(spearMesh);
+
+  const spearVortexGeom = new T.CylinderGeometry(0.007, 0.038, 1, 16, 1, true);
+  spearVortexGeom.rotateX(-Math.PI / 2);
+  spearVortexGeom.translate(0, 0, -0.5);
+  const spearVortexMat = new T.MeshBasicMaterial({
+    map: buildThrustSpiralTexture(),
+    color: '#67f2ff',
     transparent: true,
     opacity: 0,
     side: T.DoubleSide,
     depthWrite: false,
     blending: T.AdditiveBlending,
   });
-  const spearMesh = new T.Mesh(spearGeom, spearMat);
-  thrustGroup.add(spearMesh);
+  const spearVortexMesh = new T.Mesh(spearVortexGeom, spearVortexMat);
+  thrustGroup.add(spearVortexMesh);
+
+  const spearStarMat = new T.MeshBasicMaterial({
+    map: buildThrustStarTexture(),
+    color: '#ffffff',
+    transparent: true,
+    opacity: 0,
+    side: T.DoubleSide,
+    depthWrite: false,
+    depthTest: false,
+    blending: T.AdditiveBlending,
+  });
+  const spearImpactStar = new T.Mesh(new T.PlaneGeometry(0.52, 0.52), spearStarMat);
+  thrustGroup.add(spearImpactStar);
 
   const rippleRings = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     const rMat = new T.MeshBasicMaterial({
-      color: '#8cf2ff',
+      color: '#b8fcff',
       transparent: true,
       opacity: 0,
       side: T.DoubleSide,
       depthWrite: false,
+      depthTest: false,
       blending: T.AdditiveBlending,
     });
-    const rMesh = new T.Mesh(new T.RingGeometry(0.13 + i * 0.085, 0.144 + i * 0.085, 40), rMat);
+    const innerR = i === 0 ? 0.14 : 0.15 + (i - 1) * 0.04;
+    const outerR = innerR + (i === 0 ? 0.024 : 0.032);
+    const rMesh = new T.Mesh(new T.RingGeometry(innerR, outerR, 48), rMat);
     thrustGroup.add(rMesh);
     rippleRings.push(rMesh);
   }
@@ -865,6 +1188,7 @@ export function createSpatialCombatVfx(worldRoot) {
 
   let wheelTimer = 0;
   let wheelClockwise = true;
+  let wheelBaseZ = -2.25;
   let thrustTimer = 0;
   let thrustInterrupted = false;
   let parryTimer = 0;
@@ -874,22 +1198,27 @@ export function createSpatialCombatVfx(worldRoot) {
   const thrustFrom = new T.Vector3();
   const thrustTo = new T.Vector3();
   const thrustDir = new T.Vector3();
+  const spearSpinQuat = new T.Quaternion();
   const negZ = new T.Vector3(0, 0, -1);
   const camWorld = new T.Vector3();
 
   return {
     root,
     triggerWaterWheel({ x = 0, z = -2.25, clockwise = true } = {}) {
-      wheelTimer = 0.62;
+      wheelTimer = 0.78;
       wheelClockwise = clockwise !== false;
-      wheelGroup.position.set(x, 1.24, z);
-      wheelGroup.rotation.set(0.18, wheelClockwise ? 0.28 : -0.28, 0);
+      wheelBaseZ = z;
+      wheelGroup.position.set(x, 1.02, z + 0.12);
+      wheelGroup.rotation.set(0.12, wheelClockwise ? 0.22 : -0.22, 0);
+      wheelDiscA.scale.set(wheelClockwise ? 1 : -1, 1, 1);
+      wheelDiscB.scale.set(wheelClockwise ? 1 : -1, 1, 1);
       wheelGroup.visible = true;
     },
     triggerThrust({ fromX = 0, fromZ = 0, toX = 0, toZ = -3.6, interrupted = false } = {}) {
-      thrustTimer = 0.44;
+      thrustTimer = 0.72;
       thrustInterrupted = Boolean(interrupted);
-      thrustFrom.set(fromX, 1.16, fromZ - 0.42);
+      // Originate from right-hand Nichirin stance (x + 0.24m, y = 1.18m, z - 1.15m) so perspective projects a razor-sharp diagonal lance!
+      thrustFrom.set(fromX + 0.24, 1.18, fromZ - 1.15);
       thrustTo.set(toX, 1.22, toZ);
       thrustGroup.visible = true;
     },
@@ -931,47 +1260,93 @@ export function createSpatialCombatVfx(worldRoot) {
         camera.getWorldPosition(camWorld);
       }
 
-      // 1. Update 3D Water Wheel
+      // 1. Update 3D Giant Vertical Rolling Water Wheel (贰之型·水车)
       if (wheelTimer > 0) {
         wheelTimer = Math.max(0, wheelTimer - dt);
-        const p = 1 - wheelTimer / 0.62;
+        const p = 1 - wheelTimer / 0.78;
         const spinSign = wheelClockwise ? -1 : 1;
+        wheelGroup.position.z = wheelBaseZ + 0.16 - p * 0.34;
+        wheelDiscA.rotation.z = spinSign * p * Math.PI * 3.8;
+        wheelDiscB.rotation.z = spinSign * (p * Math.PI * 4.5 + 0.55);
         wheelTorus.rotation.z = spinSign * p * Math.PI * 3.4;
-        wheelFoam.rotation.z = spinSign * p * Math.PI * 4.2;
-        const s = 0.78 + Math.sin(Math.min(1, p * 1.4) * Math.PI * 0.5) * 0.42;
+        const s = 0.84 + Math.sin(Math.min(1, p * 1.35) * Math.PI * 0.5) * 0.24;
         wheelGroup.scale.setScalar(s);
-        const alpha = p < 0.7 ? 1 : (1 - p) / 0.3;
-        wheelTorusMat.opacity = alpha * 0.56;
-        wheelFoamMat.opacity = alpha * 0.44;
+        wheelSplash.position.y = -0.96 / Math.max(0.6, s);
+        wheelSplash.scale.setScalar(0.72 + p * 0.85);
+        const alpha = p < 0.72 ? 1 : (1 - p) / 0.28;
+        wheelDiscMatA.opacity = alpha * 0.86;
+        wheelDiscMatB.opacity = alpha * 0.62;
+        wheelTorusMat.opacity = alpha * 0.78;
+        wheelSplashMat.opacity = alpha * (1 - p * 0.5) * 0.62;
         wheelGroup.visible = wheelTimer > 0.005;
       } else {
         wheelGroup.visible = false;
       }
 
-      // 2. Update 3D 9.2m Piercing Spear + 3 Ripple Rings
+      // 2. Update 3D 9.2m Straight-Line Piercing Water Lance + 4 Concentric '雫波纹' Droplet Ripples (柒之型·雫波纹击刺)
       if (thrustTimer > 0) {
         thrustTimer = Math.max(0, thrustTimer - dt);
-        const p = 1 - thrustTimer / 0.44;
+        const p = 1 - thrustTimer / 0.72;
         thrustDir.subVectors(thrustTo, thrustFrom);
-        const fullLen = Math.max(0.6, thrustDir.length());
+        const fullLen = Math.max(0.7, thrustDir.length());
         thrustDir.normalize();
-        const curLen = fullLen * Math.min(1, p * 3.2);
+        const reachFrac = Math.min(1, p * 6.0);
+        const curLen = fullLen * reachFrac;
+        const distScale = clamp(Math.abs(thrustTo.z - (battle.player.z || 0)) / 2.9, 1.0, 2.55);
+
         spearMesh.position.copy(thrustFrom);
         spearMesh.quaternion.setFromUnitVectors(negZ, thrustDir);
-        spearMesh.scale.set(1 - p * 0.35, 1 - p * 0.35, curLen);
-        const accent = thrustInterrupted ? '#ffd878' : '#4ae4ff';
-        spearMat.color.set(accent);
-        spearMat.opacity = (1 - p) * 0.62;
+        const coreThin = Math.max(0.25, 1 - Math.max(0, p - 0.18) * 1.15);
+        spearMesh.scale.set(coreThin, coreThin, curLen);
+        spearMat.color.set(thrustInterrupted ? '#fff7cc' : '#eaffff');
+        spearMat.opacity = Math.max(0, (1 - p * 1.12) * 0.94);
 
+        spearVortexMesh.position.copy(thrustFrom);
+        spearVortexMesh.quaternion.copy(spearMesh.quaternion);
+        spearSpinQuat.setFromAxisAngle(negZ, p * Math.PI * 5.8);
+        spearVortexMesh.quaternion.multiply(spearSpinQuat);
+        const coneScale = 0.85 + p * 0.42;
+        spearVortexMesh.scale.set(coneScale, coneScale, curLen * 0.98);
+        spearVortexMat.color.set(thrustInterrupted ? '#ffe680' : '#5ceeff');
+        spearVortexMat.opacity = Math.max(0, (1 - p * 1.18) * 0.68);
+
+        spearImpactStar.position.copy(thrustTo).addScaledVector(thrustDir, -0.06);
+        if (camera) spearImpactStar.lookAt(camWorld);
+        spearImpactStar.rotation.z = p * 2.4;
+        const starFade = p < 0.1 ? p / 0.1 : Math.max(0, 1 - (p - 0.1) / 0.52);
+        spearImpactStar.scale.setScalar((0.68 + p * (thrustInterrupted ? 1.85 : 1.4)) * distScale);
+        spearStarMat.color.set(thrustInterrupted ? '#fff4b8' : '#ffffff');
+        spearStarMat.opacity = starFade * 0.95;
+
+        // Ring 0 = mid-shaft sonic water ring; Rings 1..3 = 3 huge concentric pond-droplet ripples blooming at impact!
         for (let i = 0; i < rippleRings.length; i++) {
           const ring = rippleRings[i];
-          const frac = 0.38 + i * 0.3;
-          ring.position.copy(thrustFrom).addScaledVector(thrustDir, fullLen * frac);
-          if (camera) ring.lookAt(camWorld);
-          const rp = clamp((p - i * 0.09) / 0.78, 0, 1);
-          ring.scale.setScalar(0.55 + rp * (thrustInterrupted ? 1.45 : 1.08));
-          ring.material.color.set(thrustInterrupted && i === 2 ? '#ffd878' : '#8cf2ff');
-          ring.material.opacity = rp > 0 ? (1 - rp) * 0.56 : 0;
+          if (i === 0) {
+            ring.position.copy(thrustFrom).addScaledVector(thrustDir, fullLen * 0.45);
+            if (camera) ring.lookAt(camWorld);
+            const rp0 = clamp(p / 0.58, 0, 1);
+            ring.scale.setScalar((0.55 + rp0 * 1.25) * Math.sqrt(distScale));
+            ring.material.color.set(thrustInterrupted ? '#ffe680' : '#9efcff');
+            ring.material.opacity = (1 - rp0) * 0.72;
+          } else {
+            const waveIdx = i - 1; // 0, 1, 2 concentric waves at impact chest
+            ring.position.copy(thrustTo).addScaledVector(thrustDir, -0.04 * (waveIdx + 1));
+            if (camera) ring.lookAt(camWorld);
+            const delay = 0.02 + waveIdx * 0.095;
+            const rp = clamp((p - delay) / (0.88 - delay), 0, 1);
+            const maxExpand = thrustInterrupted ? 2.45 + waveIdx * 0.35 : 1.95 + waveIdx * 0.32;
+            ring.scale.setScalar((0.32 + rp * maxExpand) * distScale);
+            ring.material.color.set(
+              thrustInterrupted
+                ? waveIdx === 0
+                  ? '#fff7cc'
+                  : '#ffe066'
+                : waveIdx === 0
+                  ? '#f0ffff'
+                  : '#7ef9ff',
+            );
+            ring.material.opacity = p >= delay && rp < 1 ? (1 - rp * 0.85) * 0.92 : 0;
+          }
         }
         thrustGroup.visible = thrustTimer > 0.005;
       } else {

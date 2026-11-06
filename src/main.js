@@ -375,14 +375,18 @@ const spatialInput = createSpatialInputBridge({
   onWaterWheel({ clockwise }) {
     if (mode !== 'battle') return;
     audio.unlock();
-    setGestureHint(`【贰之型·水车】${clockwise ? '顺时针旋斩' : '逆时针旋斩'}`);
+    setGestureHint(`【贰之型·水车】${clockwise ? '纵向巨轮三连旋斩' : '逆转水轮三连旋斩'}`);
     battle.castWaterWheel(getCombatTargetId(), clockwise);
     flushBattleEvents();
   },
-  onThrust({ direction: latDir }) {
+  onThrust({ direction: latDir, source }) {
     if (mode !== 'battle') return;
     audio.unlock();
-    setGestureHint('【柒之型·雫波纹击刺】突进破招');
+    setGestureHint(
+      source === 'trackpad-double-tap'
+        ? '【柒之型·雫波纹击刺】双击直线水矛贯通'
+        : '【柒之型·雫波纹击刺】直线水矛贯通破招',
+    );
     battle.castThrust(getCombatTargetId(), latDir || null);
     flushBattleEvents();
   },
@@ -544,6 +548,31 @@ function updateStickyGazeAndMenu(activeCam, dt, handRayInfo = null) {
   return null;
 }
 
+let techniqueHideTimer = null;
+function showHandheldTechnique({ eyebrow, title, sub, theme = 'waterWheel', durationMs = 950 }) {
+  if (isGlasses) return;
+  const el = $('#technique');
+  if (!el) return;
+  if (techniqueHideTimer) {
+    window.clearTimeout(techniqueHideTimer);
+    techniqueHideTimer = null;
+  }
+  el.dataset.theme = theme;
+  const eb = $('#technique-eyebrow');
+  const tt = $('#technique-title');
+  const sb = $('#technique-sub');
+  if (eb) eb.textContent = eyebrow;
+  if (tt) tt.textContent = title;
+  if (sb) sb.textContent = sub;
+  el.hidden = false;
+  if (durationMs > 0) {
+    techniqueHideTimer = window.setTimeout(() => {
+      techniqueHideTimer = null;
+      if (battle.musouTime < 0) el.hidden = true;
+    }, durationMs);
+  }
+}
+
 function flushBattleEvents() {
   for (const e of battle.events) {
     audio.event(e);
@@ -551,18 +580,48 @@ function flushBattleEvents() {
     if (e.type === 'skillCallout') worldPlaque.triggerSkillBanner(e);
     if (e.type === 'swing' || e.type === 'playerSlash') {
       slashDir = e.slashDir || 'right';
-      slashTime = slashDir.startsWith('spin') ? 0.38 : 0.25;
+      if (slashDir === 'thrust') {
+        slashTime = 0;
+      } else {
+        slashTime = slashDir.startsWith('spin') ? 0.56 : 0.25;
+      }
       slashHeavy = !!(e.heavy || e.finisher);
-      if (e.type === 'playerSlash') {
+      if (e.type === 'playerSlash' && !slashDir.startsWith('spin') && slashDir !== 'thrust') {
         navigator.vibrate?.(slashHeavy ? 18 : 8);
       }
     }
     if (e.type === 'waterWheelSpin') {
       spatialVfx.triggerWaterWheel(e);
       effects.ring(e.x ?? 0, e.z ?? -2.05, true);
+      navigator.vibrate?.([14, 42, 14, 42, 22]);
+      showHandheldTechnique({
+        eyebrow: '水之呼吸 · 贰之型',
+        title: '水　车',
+        sub: '纵向巨轮 · 三连群攻',
+        theme: 'waterWheel',
+        durationMs: 950,
+      });
+    }
+    if (e.type === 'waterWheelTick') {
+      if (e.heavy) effects.ring(battle.player.x, (battle.player.z ?? 0) - 2.1, false);
+    }
+    if (e.type === 'allyWaterWheel') {
+      ally?.spinWaterWheel?.();
     }
     if (e.type === 'thrustWave') {
+      slashTime = 0;
       spatialVfx.triggerThrust(e);
+      navigator.vibrate?.(e.interrupted ? [28, 30, 28] : 26);
+      showHandheldTechnique({
+        eyebrow: '水之呼吸 · 柒之型',
+        title: '雫波纹',
+        sub: e.interrupted ? '直线水矛 · 破招击碎！' : '9.2m 贯通 · 同心涟漪',
+        theme: e.interrupted ? 'interrupt' : 'thrust',
+        durationMs: 920,
+      });
+    }
+    if (e.type === 'allyThrust') {
+      ally?.thrustLunge?.();
     }
     if (e.type === 'breathSurge') {
       spatialVfx.triggerBreathSurge(e);
@@ -585,7 +644,13 @@ function flushBattleEvents() {
     }
     if (e.type === 'allyAttack') ally?.attack();
     if (e.type === 'attack' && e.kind === 'musou') {
-      if (!isGlasses) $('#technique').hidden = false;
+      showHandheldTechnique({
+        eyebrow: '水之呼吸 · 贰之型',
+        title: '水　车',
+        sub: '与炭治郎 · 全集中合击',
+        theme: 'waterWheel',
+        durationMs: 0,
+      });
       showMessage('炭治郎：水之呼吸 · 贰之型 水车！', 2);
       lightHeld = false;
       heavyHeld = false;
@@ -869,7 +934,9 @@ if (!isGlasses) {
       e.preventDefault();
       if (mode !== 'battle' || activePointer !== null) return;
       activePointer = e.pointerId;
-      button.setPointerCapture(e.pointerId);
+      try {
+        button.setPointerCapture(e.pointerId);
+      } catch {}
       onDown();
     });
     const release = e => {
@@ -894,10 +961,18 @@ if (!isGlasses) {
     },
   );
   bindHold(
+    '#water-wheel',
+    () => {
+      battle.castWaterWheel(getCombatTargetId(), true);
+      flushBattleEvents();
+    },
+    () => {},
+  );
+  bindHold(
     '#heavy',
     () => {
       heavyHeld = true;
-      triggerAttack('heavy', { slashDir: 'thrust' });
+      battle.castThrust(getCombatTargetId());
       flushBattleEvents();
     },
     () => {
@@ -905,7 +980,11 @@ if (!isGlasses) {
     },
   );
   $('#musou').addEventListener('click', () => {
-    triggerAttack('musou');
+    if (battle.energy >= 100) {
+      triggerAttack('musou');
+    } else {
+      battle.castUltimate(getCombatTargetId());
+    }
     flushBattleEvents();
   });
   $('#dodge-left').addEventListener('click', () => {
@@ -1015,19 +1094,24 @@ function updateHud(target) {
   $('#energy-label').textContent = battle.energy >= 100 ? '就绪' : `${Math.floor(battle.energy)}%`;
   $('#energy-ring').style.strokeDashoffset = String(282.75 * (1 - battle.energy / 100));
   $('#musou').classList.toggle('ready', battle.energy >= 100);
-  $('#musou').setAttribute('aria-disabled', String(battle.energy < 100));
+  $('#musou').setAttribute('aria-disabled', String(battle.energy < 100 && battle.ultCd > 0));
 
   const numerals = '①②③';
   const light = battle.stageView('light');
-  const heavy = battle.stageView('heavy');
   $('#light-name').textContent = numerals[light.stage - 1];
   $('#light-stage').textContent = light.label;
   $('#light').classList.toggle('chaining', battle.chainKind === 'light' && battle.chainStage > 0);
 
-  $('#heavy-name').textContent = numerals[heavy.stage - 1];
-  $('#heavy-stage').textContent = heavy.cooling ? `${battle.heavyCd.toFixed(1)}s` : heavy.label;
-  $('#heavy').classList.toggle('cooldown', heavy.cooling);
-  $('#heavy').classList.toggle('chaining', battle.chainKind === 'heavy' && battle.chainStage > 0);
+  const wheelCooling = battle.spinCd > 0.05;
+  if ($('#wheel-name')) $('#wheel-name').textContent = '贰';
+  if ($('#wheel-stage')) $('#wheel-stage').textContent = wheelCooling ? `${battle.spinCd.toFixed(1)}s` : '水车';
+  $('#water-wheel')?.classList.toggle('cooldown', wheelCooling);
+
+  const thrustCooling = battle.thrustCd > 0.05;
+  $('#heavy-name').textContent = '柒';
+  $('#heavy-stage').textContent = thrustCooling ? `${battle.thrustCd.toFixed(1)}s` : '突刺';
+  $('#heavy').classList.toggle('cooldown', thrustCooling);
+  $('#heavy').classList.remove('chaining');
 
   const hazard = battle.hazards.reduce((best, h) => (!best || h.remaining < best.remaining ? h : best), null);
   $('#danger').hidden = !hazard;
@@ -1157,7 +1241,7 @@ renderer.setAnimationLoop((now, xrFrame) => {
     accumulator += dt;
     let steps = 0;
     while (accumulator >= 1 / 60 && steps++ < 5 && mode === 'battle') {
-      if (heavyHeld) triggerAttack('heavy', { slashDir: 'thrust' });
+      if (heavyHeld) battle.castThrust(getCombatTargetId());
       if (lightHeld) triggerAttack('light', { slashDir: 'right' });
       battle.step(1 / 60, ally.travelAt);
       flushBattleEvents();
@@ -1302,7 +1386,9 @@ window.__webar = {
     menuProgress: Number(menuProgress.toFixed(3)),
     worldPlaque: worldPlaque.stats(),
     handRay: handRay.stats(),
+    slashArcVisible: slashArc.group.visible,
     spatialVfx: spatialVfx.stats(),
+    audio: audio.stats(),
     rearCamera: rearCamera.stats(),
     pose: poseCtrl.stats(),
     glassesBridge: glassesBridge.stats(),
@@ -1320,6 +1406,8 @@ window.__webar = {
       perfect: battle.perfect,
       musouCount: battle.musouCount,
       guarding: battle.guarding,
+      spinCd: Number(battle.spinCd.toFixed(2)),
+      thrustCd: Number(battle.thrustCd.toFixed(2)),
       playerX: Number(battle.player.x.toFixed(3)),
       playerZ: Number((battle.player.z || 0).toFixed(3)),
       progress: Number(battle.progress.toFixed(2)),

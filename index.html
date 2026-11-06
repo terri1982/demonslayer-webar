@@ -120,10 +120,10 @@
 
       <div id="message" role="status"></div>
 
-      <div id="technique" hidden>
-        <small>水之呼吸 · 贰之型</small>
-        <strong>水　车</strong>
-        <span>与炭治郎 · 合击</span>
+      <div id="technique" hidden data-theme="waterWheel">
+        <small id="technique-eyebrow">水之呼吸 · 贰之型</small>
+        <strong id="technique-title">水　车</strong>
+        <span id="technique-sub">与炭治郎 · 合击</span>
       </div>
 
       <div id="boss-hud" hidden>
@@ -138,19 +138,23 @@
         </div>
 
         <div class="right-controls">
-          <button id="musou" type="button" aria-disabled="true">
-            <span>水车</span>
+          <button id="musou" type="button" aria-disabled="true" aria-label="全集中水车合击">
+            <span>合击</span>
             <small id="energy-label">0%</small>
             <svg viewBox="0 0 100 100" aria-hidden="true">
               <circle cx="50" cy="50" r="45" />
               <circle id="energy-ring" cx="50" cy="50" r="45" />
             </svg>
           </button>
-          <button id="heavy" type="button">
-            <span id="heavy-name">①</span>
-            <small id="heavy-stage">突进斩</small>
+          <button id="water-wheel" type="button" aria-label="贰之型·水车（群攻旋斩）">
+            <span id="wheel-name">贰</span>
+            <small id="wheel-stage">水车</small>
           </button>
-          <button id="light" type="button">
+          <button id="heavy" type="button" aria-label="柒之型·雫波纹击刺（直线破招）">
+            <span id="heavy-name">柒</span>
+            <small id="heavy-stage">突刺</small>
+          </button>
+          <button id="light" type="button" aria-label="日轮刀普攻连斩">
             <span id="light-name">①</span>
             <small id="light-stage">横斩</small>
           </button>

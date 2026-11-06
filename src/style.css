@@ -646,6 +646,37 @@ h2 {
   color: var(--aqua);
 }
 
+#technique[data-theme='waterWheel'] {
+  border-right-color: #38bdf8;
+  background: linear-gradient(90deg, transparent, rgba(8, 42, 86, 0.9));
+}
+
+#technique[data-theme='waterWheel'] small,
+#technique[data-theme='waterWheel'] > span {
+  color: #7dd3fc;
+}
+
+#technique[data-theme='thrust'] {
+  border-right-color: #c4ffff;
+  background: linear-gradient(90deg, transparent, rgba(10, 48, 56, 0.9));
+}
+
+#technique[data-theme='thrust'] small,
+#technique[data-theme='thrust'] > span {
+  color: #c4ffff;
+}
+
+#technique[data-theme='interrupt'] {
+  border-right-color: #ffe680;
+  background: linear-gradient(90deg, transparent, rgba(52, 38, 12, 0.92));
+}
+
+#technique[data-theme='interrupt'] small,
+#technique[data-theme='interrupt'] > span,
+#technique[data-theme='interrupt'] strong {
+  color: #ffe680;
+}
+
 #boss-hud {
   position: absolute;
   left: 50%;
@@ -762,8 +793,14 @@ h2 {
   font-size: 25px;
 }
 
+#water-wheel {
+  background: radial-gradient(circle at 30% 25%, rgba(14, 148, 232, 0.92), rgba(10, 44, 92, 0.96));
+  border-color: rgba(125, 211, 252, 0.88);
+}
+
 #heavy {
-  border-color: rgba(236, 208, 156, 0.78);
+  background: radial-gradient(circle at 30% 25%, rgba(45, 168, 182, 0.9), rgba(14, 46, 56, 0.96));
+  border-color: rgba(236, 208, 156, 0.88);
 }
 
 #musou {
@@ -773,7 +810,7 @@ h2 {
 }
 
 #musou span {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 #musou svg {
@@ -800,11 +837,13 @@ h2 {
   background: #4b5d8a;
 }
 
+#water-wheel.cooldown,
 #heavy.cooldown {
   opacity: 0.55;
 }
 
 #light.chaining,
+#water-wheel.chaining,
 #heavy.chaining {
   box-shadow: 0 0 20px rgba(158, 243, 237, 0.6);
 }
@@ -998,27 +1037,50 @@ h2 {
   }
 
   .dodge {
-    width: 46px;
+    width: 45px;
     height: 54px;
     font-size: 20px;
   }
 
+  /* 390px 竖屏右手拇指扇形双层排布：上排合击奥义，下排「贰·水车 / 柒·突刺 / 横斩」零溢出 */
   .right-controls {
-    gap: 7px;
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    align-items: end;
+    justify-items: center;
+    column-gap: 7px;
+    row-gap: 6px;
   }
 
   .right-controls button {
-    width: 54px;
-    height: 54px;
-  }
-
-  #light {
-    width: 66px;
-    height: 66px;
+    width: 52px;
+    height: 52px;
   }
 
   #musou {
-    margin-bottom: 10px;
+    grid-column: 2 / 4;
+    grid-row: 1;
+    justify-self: end;
+    margin-bottom: 2px;
+    width: 52px;
+    height: 52px;
+  }
+
+  #water-wheel {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  #heavy {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  #light {
+    grid-column: 3;
+    grid-row: 2;
+    width: 64px;
+    height: 64px;
   }
 }
 
@@ -1307,7 +1369,7 @@ h2 {
 
   .left-controls,
   .right-controls {
-    gap: 7px;
+    gap: 6px;
   }
 
   .dodge {
@@ -1323,32 +1385,32 @@ h2 {
   }
 
   .right-controls button {
-    width: 52px;
-    height: 52px;
+    width: 48px;
+    height: 48px;
     padding: 0;
   }
 
   .right-controls span {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .right-controls small {
-    font-size: 9px;
+    font-size: 8.5px;
     margin-top: 1px;
   }
 
   #light {
-    width: 62px;
-    height: 62px;
+    width: 58px;
+    height: 58px;
   }
 
   #light span {
-    font-size: 20px;
+    font-size: 19px;
   }
 
   #musou {
-    width: 52px;
-    height: 52px;
+    width: 48px;
+    height: 48px;
     margin-bottom: 6px;
     padding: 0;
   }

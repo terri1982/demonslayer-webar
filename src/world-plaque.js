@@ -530,26 +530,84 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     lockHudTex.needsUpdate = true;
   }
 
-  function triggerSkillBanner({ title, sub = '', accent = '#7df9ff', duration = 1.15 } = {}) {
+  function triggerSkillBanner({ title, sub = '', accent = '#7df9ff', theme = 'default', duration = 1.15 } = {}) {
     if (!isGlasses || !title) return;
     bannerDuration = duration;
     bannerTimer = duration;
     bannerCtx.clearRect(0, 0, 768, 160);
+
+    const bgGrad = bannerCtx.createLinearGradient(0, 16, 768, 144);
+    if (theme === 'waterWheel' || theme === 'ultimate') {
+      bgGrad.addColorStop(0, 'rgba(6, 30, 68, 0.94)');
+      bgGrad.addColorStop(0.55, 'rgba(10, 56, 106, 0.94)');
+      bgGrad.addColorStop(1, 'rgba(8, 34, 72, 0.94)');
+    } else if (theme === 'interrupt') {
+      bgGrad.addColorStop(0, 'rgba(46, 34, 8, 0.95)');
+      bgGrad.addColorStop(0.55, 'rgba(22, 48, 56, 0.94)');
+      bgGrad.addColorStop(1, 'rgba(42, 30, 8, 0.95)');
+    } else if (theme === 'thrust') {
+      bgGrad.addColorStop(0, 'rgba(6, 34, 42, 0.94)');
+      bgGrad.addColorStop(0.55, 'rgba(14, 58, 68, 0.94)');
+      bgGrad.addColorStop(1, 'rgba(8, 32, 40, 0.94)');
+    } else {
+      bgGrad.addColorStop(0, 'rgba(8, 22, 36, 0.88)');
+      bgGrad.addColorStop(1, 'rgba(12, 30, 48, 0.88)');
+    }
+
     drawRoundedRect(bannerCtx, 12, 16, 744, 128, 24);
-    bannerCtx.fillStyle = 'rgba(8, 22, 36, 0.88)';
+    bannerCtx.fillStyle = bgGrad;
     bannerCtx.fill();
-    bannerCtx.lineWidth = 4;
+    bannerCtx.lineWidth = theme === 'interrupt' ? 5 : 4;
     bannerCtx.strokeStyle = accent;
     bannerCtx.stroke();
 
+    // Distinct silhouette emblem on the left so peripheral vision immediately tells Wheel vs Thrust apart:
+    const ex = 66;
+    const ey = 80;
+    bannerCtx.save();
+    if (theme === 'waterWheel' || theme === 'ultimate') {
+      bannerCtx.strokeStyle = '#38bdf8';
+      bannerCtx.lineWidth = 5;
+      bannerCtx.beginPath();
+      bannerCtx.arc(ex, ey, 28, 0, Math.PI * 2);
+      bannerCtx.stroke();
+      bannerCtx.strokeStyle = '#f0fcff';
+      bannerCtx.lineWidth = 3.5;
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2;
+        bannerCtx.beginPath();
+        bannerCtx.arc(ex, ey, 19, a, a + 0.95);
+        bannerCtx.stroke();
+      }
+    } else if (theme === 'thrust' || theme === 'interrupt') {
+      const rippleColor = theme === 'interrupt' ? '#ffe680' : '#9efcff';
+      bannerCtx.strokeStyle = rippleColor;
+      bannerCtx.lineWidth = 2.6;
+      bannerCtx.beginPath();
+      bannerCtx.arc(ex + 8, ey, 14, 0, Math.PI * 2);
+      bannerCtx.stroke();
+      bannerCtx.beginPath();
+      bannerCtx.arc(ex + 8, ey, 25, 0, Math.PI * 2);
+      bannerCtx.stroke();
+      bannerCtx.strokeStyle = '#ffffff';
+      bannerCtx.lineWidth = 4.5;
+      bannerCtx.beginPath();
+      bannerCtx.moveTo(ex - 26, ey);
+      bannerCtx.lineTo(ex + 22, ey);
+      bannerCtx.stroke();
+    }
+    bannerCtx.restore();
+
+    const textCenterX = theme === 'default' ? 384 : 412;
+    const maxTextW = theme === 'default' ? 700 : 636;
     bannerCtx.textAlign = 'center';
-    bannerCtx.fillStyle = accent;
-    bannerCtx.font = '700 40px "PingFang SC", "Microsoft YaHei", serif';
-    bannerCtx.fillText(title, 384, 76, 700);
+    bannerCtx.fillStyle = theme === 'waterWheel' ? '#f0fcff' : accent;
+    bannerCtx.font = '700 38px "PingFang SC", "Microsoft YaHei", serif';
+    bannerCtx.fillText(title, textCenterX, 76, maxTextW);
     if (sub) {
-      bannerCtx.fillStyle = '#e5f7f8';
-      bannerCtx.font = '600 25px "PingFang SC", "Microsoft YaHei", sans-serif';
-      bannerCtx.fillText(sub, 384, 118, 700);
+      bannerCtx.fillStyle = theme === 'waterWheel' ? '#93dcff' : theme === 'interrupt' ? '#fff3c4' : '#e5f7f8';
+      bannerCtx.font = '600 24px "PingFang SC", "Microsoft YaHei", sans-serif';
+      bannerCtx.fillText(sub, textCenterX, 118, maxTextW);
     }
     bannerCtx.textAlign = 'left';
     bannerTex.needsUpdate = true;
@@ -721,7 +779,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             ? '🖐️ 右手手势追踪中 · 左手推盘走位'
             : handTracking
               ? '🖐️ 抬右手出招 · 📱 盲操已自动兜底'
-              : '📱 点斩 · 快拂水车/突刺 · 按住走位 · 双指架盾';
+              : '📱 点斩 · 上拂水车 · 横拂/双击突刺 · 双指架盾';
           renderCompactBattleStrip({
             hp: Math.round(battle.hp),
             energy: Math.floor(battle.energy),

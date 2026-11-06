@@ -1,4 +1,4 @@
-import wheelTiming from './waterwheel-timing.json';
+import wheelTiming from './waterwheel-timing.json' with { type: 'json' };
 import { BODY, companionHome, resolveFormation } from './formation.js';
 
 export const MAX_ENEMIES = 3;
@@ -64,8 +64,10 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     heavyCd: 0,
     dodgeCd: 0,
     spinCd: 0,
+    thrustCd: 0,
     thrustBurstCd: 0,
     ultCd: 0,
+    wheelSpinQueue: [],
     guarding: false,
     steerX: 0,
     steerY: 0,
@@ -154,6 +156,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
   function finish(victory) {
     g.status = victory ? 'victory' : 'defeat';
     g.hazards = [];
+    g.wheelSpinQueue = [];
     g.swing = null;
     g.moveKey = null;
     emit('end', { victory });
@@ -223,8 +226,14 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
       g.musouCount++;
       g.invincible = WHEEL.duration + 0.2;
       g.ally.castStart = { x: g.ally.x, z: g.ally.z };
+      g.wheelSpinQueue = [];
       emit('attack', { kind: 'musou' });
-      emit('skillCallout', { title: '水之呼吸 · 贰之型 水车合击', sub: '与炭治郎全集中合击斩鬼', accent: '#7df9ff' });
+      emit('skillCallout', {
+        title: '水之呼吸 · 贰之型 水车合击',
+        sub: '与炭治郎全集中合击斩鬼',
+        accent: '#38bdf8',
+        theme: 'ultimate',
+      });
       return true;
     }
     if (kind !== 'light' && kind !== 'heavy') return false;
@@ -287,7 +296,8 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     return findTargetOrNearest(null, THRUST_REACH);
   }
 
-  // Skill 1 (Air Gesture 'circle' / Trackpad 'swipe-up' / Key '1'): Water Wheel Spin / Full Musou
+  // Skill 1 (Air Gesture 'circle' / Trackpad 'swipe-up' / Button '#water-wheel' / Key '1'):
+  // 贰之型·水车 — Vertical Rolling Water Wheel (3-beat multi-hit close-range AOE + Tanjiro WaterWheel somersault)
   function castWaterWheel(targetId, clockwise = true) {
     if (g.status !== 'playing' || g.musouTime >= 0) return false;
     if (g.energy >= 100) {
@@ -295,88 +305,162 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     }
     if (g.spinCd > 0) return false;
     g.guarding = false;
-    g.spinCd = 1.05;
-    g.invincible = Math.max(g.invincible, 0.36);
+    g.swing = null;
+    g.moveKey = null;
+    g.queuedAttack = null;
+    g.spinCd = 1.15;
+    g.invincible = Math.max(g.invincible, 0.42);
+
+    const aoeRadius = REACH + 1.45;
     const targets = g.enemies.filter(
-      e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= REACH + 1.4,
+      e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= aoeRadius,
     );
-    const primary = findTargetOrNearest(targetId, REACH + 1.4);
-    if (targets.length > 0) {
-      for (const foe of targets) {
-        hurtEnemy(foe, foe.id === primary?.id ? 40 : 28, true, true, true);
-      }
+    const primary = findTargetOrNearest(targetId, aoeRadius);
+    const centerX = primary ? primary.x : g.player.x;
+    const centerZ = primary ? primary.z : g.player.z - 2.25;
+
+    // Beat 1/3 immediate sweeping water-wheel cut:
+    for (const foe of targets) {
+      hurtEnemy(foe, foe.id === primary?.id ? 22 : 16, false, true, false);
     }
-    g.energy = Math.min(100, g.energy + 14);
+    // Schedule Beats 2/3 (+0.17s) and 3/3 (+0.35s heavy slam & knockback) for unmistakable 3-hit rolling feel:
+    g.wheelSpinQueue.push(
+      {
+        at: g.time + 0.17,
+        tick: 2,
+        primaryId: primary?.id ?? null,
+        primaryDamage: 18,
+        splashDamage: 14,
+        heavy: false,
+        launch: false,
+      },
+      {
+        at: g.time + 0.35,
+        tick: 3,
+        primaryId: primary?.id ?? null,
+        primaryDamage: 24,
+        splashDamage: 18,
+        heavy: true,
+        launch: true,
+      },
+    );
+
+    g.energy = Math.min(100, g.energy + 12);
     const slashDir = clockwise ? 'spin-cw' : 'spin-ccw';
     emit('waterWheelSpin', {
       clockwise,
       hitCount: targets.length,
-      x: primary ? primary.x : g.player.x,
-      z: primary ? primary.z : g.player.z - 2.25,
+      x: centerX,
+      z: centerZ,
     });
-    emit('allyAttack', { target: primary?.id ?? null });
-    emit('impact', { heavy: true, finisher: true, hit: targets.length > 0 });
+    emit('allyWaterWheel', {
+      clockwise,
+      target: primary?.id ?? null,
+      x: centerX,
+      z: centerZ,
+    });
     emit('playerSlash', { heavy: true, finisher: true, stage: 3, slashDir });
     emit('skillCallout', {
-      title: '贰之型 · 水车旋斩',
-      sub: clockwise ? '顺时针立体水轮破阵' : '逆时针立体水轮破阵',
-      accent: '#7df9ff',
+      title: '水之呼吸 · 贰之型【水　车】',
+      sub: clockwise ? '纵向巨轮 · 三连群攻旋斩' : '逆转巨轮 · 三连群攻旋斩',
+      accent: '#38bdf8',
+      theme: 'waterWheel',
+      duration: 1.3,
     });
-    emit('message', { text: '水之呼吸 · 贰之型 水车旋斩！', duration: 1.5 });
+    emit('message', { text: '水之呼吸 · 贰之型 水车（三连群攻旋斩）！', duration: 1.5 });
     return true;
   }
 
-  // Skill 2 (Air Gesture 'thrust' / Trackpad 'swipe-left'|'swipe-right' / Key '2'): 9.2m Piercing Ripple Thrust
+  // Skill 2 (Air Gesture 'thrust' / Trackpad 'swipe-left'|'swipe-right'|double-tap / Button '#heavy' / Key '2'):
+  // 柒之型·雫波纹击刺 — 9.2m Straight-Line Piercing Water Lance + Concentric Droplet Ripples (NEVER triggers curved slashArc!)
   function castThrust(targetId, lateralDir = null) {
     if (g.status !== 'playing' || g.musouTime >= 0) return false;
+    if (g.thrustCd > 0) return false;
     g.guarding = false;
+    // Cancel any normal slash combo so Tanjiro never chains into Heavy2/Heavy3 spinning swings:
+    g.swing = null;
+    g.moveKey = null;
+    g.queuedAttack = null;
+    g.chainKind = null;
+    g.chainStage = 0;
+    g.chainTimer = 0;
+
     if (lateralDir && g.hazards.some(h => h.remaining <= 0.7 && h.remaining > 0)) {
       g.invincible = Math.max(g.invincible, 0.38);
     }
+
     const target = findThrustTarget(targetId);
     const hadHazard = target ? g.hazards.some(h => h.source === target.id && h.remaining > 0) : false;
-    if (target && hadHazard) {
-      removeHazards(target);
-      target.stun = Math.max(target.stun, 0.85);
-      target.flash = 0.16;
-      g.perfect++;
-      g.energy = Math.min(100, g.energy + 12);
-    }
-    if (attack('heavy', target?.id ?? targetId, { slashDir: 'thrust' })) {
-      emit('thrustWave', {
-        fromX: g.player.x,
-        fromZ: g.player.z,
-        toX: target ? target.x : g.player.x,
-        toZ: target ? target.z : g.player.z - 4.2,
-        interrupted: hadHazard,
-      });
-      emit('skillCallout', {
-        title: hadHazard ? '柒之型 · 雫波纹击刺（破招！）' : '柒之型 · 雫波纹击刺',
-        sub: hadHazard ? '远程贯穿蓄力红圈 · 水车 +12%' : '9.2m 贯穿水矛破敌',
-        accent: hadHazard ? '#ffe299' : '#9beeff',
-      });
-      return true;
-    }
-    if (g.thrustBurstCd > 0) return false;
-    g.thrustBurstCd = 0.42;
+    g.thrustCd = hadHazard ? 0.62 : 1.1;
+    g.thrustBurstCd = g.thrustCd;
+
+    const fromX = g.player.x;
+    const fromZ = g.player.z;
+    const toX = target ? target.x : fromX;
+    const toZ = target ? target.z : fromZ - 4.4;
+
     if (target) {
-      hurtEnemy(target, hadHazard ? 44 : 32, true, true, true);
+      if (hadHazard) {
+        removeHazards(target);
+        target.stun = Math.max(target.stun, 1.05);
+        target.flash = 0.2;
+        g.perfect++;
+        g.energy = Math.min(100, g.energy + 16);
+      }
+      hurtEnemy(target, hadHazard ? 72 : 56, true, true, true);
+
+      // True linear piercing: any secondary demon standing along the straight lance corridor (<= 0.42m lateral offset) is also pierced!
+      const rayDx = toX - fromX;
+      const rayDz = toZ - fromZ;
+      const rayLen = Math.hypot(rayDx, rayDz);
+      if (rayLen > 0.2) {
+        const ux = rayDx / rayLen;
+        const uz = rayDz / rayLen;
+        for (const other of g.enemies) {
+          if (other.id === target.id || other.hp <= 0) continue;
+          const relX = other.x - fromX;
+          const relZ = other.z - fromZ;
+          const proj = relX * ux + relZ * uz;
+          if (proj > 0.4 && proj <= rayLen + 1.2) {
+            const perp = Math.abs(relX * uz - relZ * ux);
+            if (perp <= 0.42) {
+              hurtEnemy(other, 34, true, false, true);
+            }
+          }
+        }
+      }
+    } else {
+      g.energy = Math.min(100, g.energy + 6);
     }
+
     emit('thrustWave', {
-      fromX: g.player.x,
-      fromZ: g.player.z,
-      toX: target ? target.x : g.player.x,
-      toZ: target ? target.z : g.player.z - 4.2,
+      fromX,
+      fromZ,
+      toX,
+      toZ,
+      interrupted: hadHazard,
+      hit: Boolean(target),
+      lateralDir,
+    });
+    emit('allyThrust', {
+      target: target?.id ?? null,
+      toX,
+      toZ,
       interrupted: hadHazard,
     });
-    emit('impact', { heavy: true, finisher: false, hit: !!target });
-    emit('playerSlash', { heavy: true, finisher: false, stage: 1, slashDir: 'thrust' });
     emit('skillCallout', {
-      title: hadHazard ? '柒之型 · 雫波纹击刺（破招！）' : '柒之型 · 雫波纹击刺',
-      sub: hadHazard ? '极速贯穿打断蓄力' : '极速水矛突刺',
-      accent: hadHazard ? '#ffe299' : '#9beeff',
+      title: hadHazard ? '柒之型 · 雫波纹击刺【破招！】' : '水之呼吸 · 柒之型【雫波纹击刺】',
+      sub: hadHazard ? '直线水矛刺穿蓄力红圈 · 水车 +26%' : '9.2m 直线水矛贯通 · 同心涟漪点杀',
+      accent: hadHazard ? '#ffe680' : '#c4ffff',
+      theme: hadHazard ? 'interrupt' : 'thrust',
+      duration: hadHazard ? 1.45 : 1.25,
     });
-    emit('message', { text: '水之呼吸 · 柒之型 雫波纹击刺！', duration: 1.3 });
+    emit('message', {
+      text: hadHazard
+        ? '柒之型 · 雫波纹击刺 破招贯穿！蓄力已击碎'
+        : '水之呼吸 · 柒之型 雫波纹击刺（直线贯通）！',
+      duration: 1.35,
+    });
     return true;
   }
 
@@ -559,6 +643,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
       'heavyCd',
       'dodgeCd',
       'spinCd',
+      'thrustCd',
       'thrustBurstCd',
       'ultCd',
       'invincible',
@@ -566,6 +651,30 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
       'allyCd',
     ]) {
       g[key] = Math.max(0, g[key] - dt);
+    }
+    if (g.wheelSpinQueue.length > 0 && g.musouTime < 0) {
+      const remainingTicks = [];
+      for (const item of g.wheelSpinQueue) {
+        if (g.time + 1e-8 >= item.at) {
+          const aoeRadius = REACH + 1.55;
+          const targets = g.enemies.filter(
+            e => e.hp > 0 && Math.hypot(e.x - g.player.x, e.z - g.player.z) <= aoeRadius,
+          );
+          for (const foe of targets) {
+            hurtEnemy(
+              foe,
+              foe.id === item.primaryId ? item.primaryDamage : item.splashDamage,
+              item.heavy,
+              false,
+              item.launch,
+            );
+          }
+          emit('waterWheelTick', { tick: item.tick, hitCount: targets.length, heavy: item.heavy });
+        } else {
+          remainingTicks.push(item);
+        }
+      }
+      g.wheelSpinQueue = remainingTicks;
     }
     if (g.guarding && g.musouTime < 0) {
       g.energy = Math.min(100, g.energy + dt * (isHashira ? 12.5 : 9.5));

@@ -290,6 +290,79 @@ export function createAudio() {
     return enabled;
   }
 
+  function pushRecent(tag) {
+    recent.push(tag);
+    if (recent.length > 32) recent.shift();
+  }
+
+  // Synthesize deep rolling waterfall wheel whoosh for 贰之型·水车
+  function synthWaterWheelWhoosh() {
+    if (!ctx || !effectBus || !enabled || paused || ctx.state !== 'running') return;
+    try {
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const sub = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      sub.type = 'sine';
+      osc.frequency.setValueAtTime(165, t0);
+      osc.frequency.exponentialRampToValueAtTime(340, t0 + 0.22);
+      osc.frequency.exponentialRampToValueAtTime(140, t0 + 0.58);
+      sub.frequency.setValueAtTime(92, t0);
+      sub.frequency.exponentialRampToValueAtTime(185, t0 + 0.28);
+      sub.frequency.exponentialRampToValueAtTime(82, t0 + 0.6);
+      gain.gain.setValueAtTime(0.001, t0);
+      gain.gain.linearRampToValueAtTime(0.24, t0 + 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.62);
+      osc.connect(gain);
+      sub.connect(gain);
+      gain.connect(effectBus);
+      osc.start(t0);
+      sub.start(t0);
+      osc.stop(t0 + 0.64);
+      sub.stop(t0 + 0.64);
+    } catch {}
+  }
+
+  // Synthesize razor-sharp linear sonic pierce + 3 crystalline pond-droplet ripple chimes for 柒之型·雫波纹击刺
+  function synthDropletRipple(interrupted = false) {
+    if (!ctx || !effectBus || !enabled || paused || ctx.state !== 'running') return;
+    try {
+      const t0 = ctx.currentTime;
+      // 1) Razor-sharp forward pierce dart (high-to-mid sweep in 85ms):
+      const dart = ctx.createOscillator();
+      const dartGain = ctx.createGain();
+      dart.type = 'sawtooth';
+      dart.frequency.setValueAtTime(1760, t0);
+      dart.frequency.exponentialRampToValueAtTime(380, t0 + 0.09);
+      dartGain.gain.setValueAtTime(0.22, t0);
+      dartGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.1);
+      dart.connect(dartGain);
+      dartGain.connect(effectBus);
+      dart.start(t0);
+      dart.stop(t0 + 0.11);
+
+      // 2) 3 Concentric '雫波纹' crystalline water-droplet chimes:
+      const notes = interrupted ? [1046.5, 1568.0, 2093.0] : [987.8, 1318.5, 1760.0];
+      notes.forEach((freq, idx) => {
+        const start = t0 + 0.055 + idx * 0.075;
+        const drop = ctx.createOscillator();
+        const dropGain = ctx.createGain();
+        drop.type = 'sine';
+        drop.frequency.setValueAtTime(freq * 0.84, start);
+        drop.frequency.exponentialRampToValueAtTime(freq, start + 0.035);
+        drop.frequency.exponentialRampToValueAtTime(freq * 0.96, start + 0.28);
+        dropGain.gain.setValueAtTime(0.001, start);
+        dropGain.gain.linearRampToValueAtTime(0.2 - idx * 0.035, start + 0.015);
+        dropGain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+        drop.connect(dropGain);
+        dropGain.connect(effectBus);
+        drop.start(start);
+        drop.stop(start + 0.32);
+      });
+    } catch {}
+  }
+
   function event(e) {
     if (e.type === 'wave') {
       unlock();
@@ -324,6 +397,36 @@ export function createAudio() {
     }
     if (e.type === 'musouRelease') {
       playEffect('water', 0.8, 0.85, 0.5);
+      return;
+    }
+    if (e.type === 'waterWheelSpin') {
+      duck(0.55);
+      playEffect('water', 0.78, 1.18, 0.12);
+      playEffect('slash-alt', 0.52, 0.92, 0.04);
+      synthWaterWheelWhoosh();
+      pushRecent('water-wheel');
+      const gen = epoch;
+      setTimeout(() => {
+        if (gen === epoch && enabled && !paused) playEffect('slash-light', 0.48, 1.06, 0.02);
+      }, 165);
+      setTimeout(() => {
+        if (gen === epoch && enabled && !paused) playEffect('slash-heavy', 0.58, 1.14, 0.02);
+      }, 335);
+      return;
+    }
+    if (e.type === 'waterWheelTick') {
+      if (e.hitCount > 0) {
+        playEffect(e.heavy ? 'hit-heavy' : 'hit', e.heavy ? 0.72 : 0.52, e.heavy ? 1.02 : 1.14, 0.02);
+      }
+      return;
+    }
+    if (e.type === 'thrustWave') {
+      playEffect('slash-light', 0.55, 1.54, 0.03);
+      if (e.hit) {
+        playEffect('hit-heavy', e.interrupted ? 0.88 : 0.72, e.interrupted ? 1.38 : 1.26, 0.03);
+      }
+      synthDropletRipple(Boolean(e.interrupted));
+      pushRecent(e.interrupted ? 'thrust-interrupt' : 'thrust-ripple');
       return;
     }
     if (e.type === 'impact') {
