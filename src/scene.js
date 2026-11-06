@@ -45,26 +45,26 @@ export function createCourtyard(worldRoot) {
     marker.rotation.y = a;
   }
 
-  // Compact wisteria torii frame at z = -2.46m, total span 1.46m (<= 1.5m), top height 1.58m (1.2-1.6m).
+  // Open-arch wisteria torii frame at z = -2.46m, total span 1.48m (<= 1.5m), crossbeams raised above 2.02m so 1.55m eye-level demon combat view is 100% unobstructed.
   for (const side of [-1, 1]) {
-    box(0.075, 1.48, 0.075, side * 0.64, 0.74, -2.46, wood);
-    box(0.12, 0.06, 0.12, side * 0.64, 0.03, -2.46, dark);
+    box(0.075, 2.22, 0.075, side * 0.66, 1.11, -2.46, wood);
+    box(0.12, 0.06, 0.12, side * 0.66, 0.03, -2.46, dark);
   }
-  box(1.42, 0.075, 0.09, 0, 1.48, -2.46, wood);
-  box(1.48, 0.045, 0.11, 0, 1.555, -2.46, dark);
-  box(1.24, 0.05, 0.065, 0, 1.28, -2.46, wood);
+  box(1.44, 0.075, 0.09, 0, 2.22, -2.46, wood);
+  box(1.48, 0.045, 0.11, 0, 2.295, -2.46, dark);
+  box(1.28, 0.05, 0.065, 0, 2.02, -2.46, wood);
 
   const portal = new T.Mesh(
-    new T.PlaneGeometry(1.18, 1.24),
+    new T.PlaneGeometry(1.22, 1.94),
     new T.MeshBasicMaterial({
       color: '#7954ac',
       transparent: true,
-      opacity: 0.1,
+      opacity: 0.08,
       side: T.DoubleSide,
       depthWrite: false,
     }),
   );
-  portal.position.set(0, 0.66, -2.47);
+  portal.position.set(0, 1.0, -2.47);
   group.add(portal);
 
   // Instanced wisteria blossoms within <= 0.73m radius around z = -2.22m.

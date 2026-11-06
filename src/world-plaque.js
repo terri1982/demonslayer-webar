@@ -323,7 +323,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     texture.needsUpdate = true;
   }
 
-  // Phase B Ultra-Slim Top Status Bar (scaled to 0.756m x 0.112m at y = 1.82m so center combat FOV stays 100% clear)
+  // Phase B Ultra-Slim Top Status Bar (uniform 1:1 aspect ratio inside a 128px slim band so text is never squashed)
   function renderCompactBattleStrip(state) {
     const sig = `compact|${JSON.stringify(state)}`;
     if (sig === lastSignature) return;
@@ -331,56 +331,58 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    drawRoundedRect(ctx, 14, 26, canvas.width - 28, canvas.height - 52, 38);
-    ctx.fillStyle = state.danger ? 'rgba(34, 12, 22, 0.88)' : 'rgba(9, 22, 34, 0.84)';
+    const boxY = 86;
+    const boxH = 128;
+    drawRoundedRect(ctx, 18, boxY, canvas.width - 36, boxH, 26);
+    ctx.fillStyle = state.danger ? 'rgba(34, 12, 22, 0.9)' : 'rgba(9, 22, 34, 0.86)';
     ctx.fill();
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 3.5;
     ctx.strokeStyle = state.danger
       ? 'rgba(255, 98, 122, 0.95)'
       : state.guarding
         ? 'rgba(125, 249, 255, 0.95)'
-        : 'rgba(158, 241, 236, 0.65)';
+        : 'rgba(158, 241, 236, 0.68)';
     ctx.stroke();
 
-    // Left: HP gauge
+    // Left: HP gauge (1:1 un-distorted typography)
     ctx.textAlign = 'left';
     ctx.fillStyle = '#dff6f4';
-    ctx.font = '700 42px "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(`守备 ${state.hp}%`, 42, 122);
+    ctx.font = '700 26px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(`守备 ${state.hp}%`, 42, boxY + 42);
 
-    drawRoundedRect(ctx, 42, 152, 250, 28, 14);
+    drawRoundedRect(ctx, 196, boxY + 26, 132, 14, 7);
     ctx.fillStyle = 'rgba(255,255,255,0.16)';
     ctx.fill();
-    drawRoundedRect(ctx, 42, 152, Math.max(14, 2.5 * state.hp), 28, 14);
+    drawRoundedRect(ctx, 196, boxY + 26, Math.max(10, 1.32 * state.hp), 14, 7);
     ctx.fillStyle = state.hp > 35 ? '#9ef0c8' : '#ff697d';
     ctx.fill();
 
     // Middle: Water Wheel Energy gauge
     ctx.fillStyle = state.energy >= 100 ? '#7df9ff' : '#d8c5ff';
-    ctx.fillText(state.energy >= 100 ? '水车就绪' : `水车 ${state.energy}%`, 332, 122);
+    ctx.fillText(state.energy >= 100 ? '水车就绪' : `水车 ${state.energy}%`, 356, boxY + 42);
 
-    drawRoundedRect(ctx, 332, 152, 250, 28, 14);
+    drawRoundedRect(ctx, 506, boxY + 26, 128, 14, 7);
     ctx.fillStyle = 'rgba(255,255,255,0.16)';
     ctx.fill();
-    drawRoundedRect(ctx, 332, 152, Math.max(14, 2.5 * state.energy), 28, 14);
+    drawRoundedRect(ctx, 506, boxY + 26, Math.max(10, 1.28 * state.energy), 14, 7);
     ctx.fillStyle = state.energy >= 100 ? '#7df9ff' : '#a48bf0';
     ctx.fill();
 
     // Right: Wave progress + Hand/Shield live pill
     ctx.textAlign = 'right';
     ctx.fillStyle = '#ffe29c';
-    ctx.font = '700 40px "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(state.rightTop, canvas.width - 42, 122);
+    ctx.font = '700 25px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(state.rightTop, canvas.width - 42, boxY + 42);
 
     ctx.fillStyle = state.danger ? '#ffadb8' : '#a5f1ec';
-    ctx.font = '600 34px "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(state.rightBottom, canvas.width - 42, 184);
+    ctx.font = '600 21px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(state.rightBottom, canvas.width - 42, boxY + 98);
     ctx.textAlign = 'left';
 
     // Slim bottom status line
     ctx.fillStyle = '#cfe8ea';
-    ctx.font = '600 32px "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(state.hintLine, 42, 276, canvas.width - 84);
+    ctx.font = '500 21px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(state.hintLine, 42, boxY + 98, 560);
 
     texture.needsUpdate = true;
   }
@@ -634,11 +636,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         group.visible = mode === 'welcome' && window.innerWidth >= 700;
       }
 
-      // Smoothly transition Plaque between Phase A (prominent 3D welcome/result card) & Phase B (slim top-rim bar)
+      // Smoothly transition Plaque between Phase A (prominent 3D welcome/result card) & Phase B (slim 1:1 top-rim bar)
       if (isGlasses) {
         if (mode === 'battle') {
-          targetPlaquePos.set(0.0, 1.84, -2.24);
-          targetPlaqueScale.set(0.9, 0.42, 1);
+          targetPlaquePos.set(0.0, 1.82, -2.24);
+          targetPlaqueScale.set(0.84, 0.84, 1);
         } else {
           targetPlaquePos.set(0.26, 1.72, -2.16);
           targetPlaqueScale.set(1, 1, 1);
