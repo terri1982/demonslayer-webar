@@ -35,6 +35,27 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   );
   group.add(plaqueMesh);
 
+  // Dedicated 1:1 Onboarding Spatial Interaction Guide v2.0 3D Plaque (mode === 'guide')
+  const guideCanvas = document.createElement('canvas');
+  guideCanvas.width = 1024;
+  guideCanvas.height = 468;
+  const guideCtx = guideCanvas.getContext('2d');
+  const guideTex = new T.CanvasTexture(guideCanvas);
+  guideTex.colorSpace = T.SRGBColorSpace;
+  guideTex.anisotropy = 4;
+  const guideMesh = new T.Mesh(
+    new T.PlaneGeometry(0.94, 0.43),
+    new T.MeshBasicMaterial({
+      map: guideTex,
+      transparent: true,
+      depthWrite: false,
+      side: T.DoubleSide,
+    }),
+  );
+  guideMesh.position.set(0.04, 1.74, -2.16);
+  guideMesh.visible = false;
+  worldRoot.add(guideMesh);
+
   // Helper to build a Phase A 3D Spatial Menu Button (card + padded invisible hit plane)
   function createMenuButtonSlot({ width, height, hitWidth, hitHeight, y, z }) {
     const btnCanvas = document.createElement('canvas');
@@ -254,6 +275,28 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   const chevronLeft = createChevronMesh(true);
   const chevronRight = createChevronMesh(false);
 
+  // --- v2.0 3-Second Fist Charge Progress Ring around 3D Reticle (0% .. 100%) ---
+  const ultChargeCanvas = document.createElement('canvas');
+  ultChargeCanvas.width = 256;
+  ultChargeCanvas.height = 256;
+  const ultChargeCtx = ultChargeCanvas.getContext('2d');
+  const ultChargeTex = new T.CanvasTexture(ultChargeCanvas);
+  ultChargeTex.colorSpace = T.SRGBColorSpace;
+  const ultChargeMesh = new T.Mesh(
+    new T.PlaneGeometry(0.19, 0.19),
+    new T.MeshBasicMaterial({
+      map: ultChargeTex,
+      transparent: true,
+      opacity: 0.96,
+      side: T.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+    }),
+  );
+  ultChargeMesh.position.set(0, -0.008, 0.004);
+  ultChargeMesh.visible = false;
+  reticleGroup.add(ultChargeMesh);
+
   // --- Phase B: Lightweight 3D Calligraphy Skill Callout Banner ---
   const bannerCanvas = document.createElement('canvas');
   bannerCanvas.width = 768;
@@ -279,7 +322,10 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   let bannerTimer = 0;
   let bannerDuration = 1.15;
   let lastSignature = '';
+  let lastGuideSig = '';
   let lastLockHudSig = '';
+  let lastUltChargeBucket = -1;
+  let currentUltChargeProgress = 0;
   let offscreenDirection = null;
 
   const worldDir = new T.Vector3();
@@ -298,6 +344,144 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     c.arcTo(x, y + h, x, y, r);
     c.arcTo(x, y, x + w, y, r);
     c.closePath();
+  }
+
+  function renderGuidePlaque(state) {
+    const sig = JSON.stringify(state);
+    if (sig === lastGuideSig) return;
+    lastGuideSig = sig;
+
+    const w = guideCanvas.width;
+    const h = guideCanvas.height;
+    guideCtx.clearRect(0, 0, w, h);
+
+    const grad = guideCtx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, 'rgba(8, 20, 34, 0.94)');
+    grad.addColorStop(0.5, 'rgba(13, 32, 48, 0.94)');
+    grad.addColorStop(1, 'rgba(9, 22, 36, 0.94)');
+    drawRoundedRect(guideCtx, 14, 14, w - 28, h - 28, 24);
+    guideCtx.fillStyle = grad;
+    guideCtx.fill();
+    guideCtx.lineWidth = 3.5;
+    guideCtx.strokeStyle = 'rgba(255, 214, 130, 0.85)';
+    guideCtx.stroke();
+
+    guideCtx.textAlign = 'left';
+    guideCtx.fillStyle = '#ffd98e';
+    guideCtx.font = '700 22px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText('鬼灭之刃 · AR 空间操作说明 v2.0', 40, 56);
+
+    guideCtx.textAlign = 'right';
+    guideCtx.fillStyle = '#7df9ff';
+    guideCtx.font = '600 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText(`${state.badge} · 免晃动手机`, w - 40, 56);
+    guideCtx.textAlign = 'left';
+
+    const leftRows = [
+      ['📱 轻点盲操板', '普通攻击 / 菜单确认（全时有效）'],
+      ['📱 快滑左 / 右', '<=0.2s 触发左闪 / 右闪'],
+      ['📱 按住持续推', '>0.2s 平滑走位（零闪避串扰）'],
+      ['📱 双指按住', '持续水镜格挡兜底'],
+    ];
+    const rightRows = [
+      ['🖐️ 左右连挥3下', '贰之型·水车（三连旋斩）'],
+      ['🖐️ 向前出拳/指', '柒之型·雫波纹击刺（破招）'],
+      ['✋ 竖掌朝前保持', '持续水镜格挡（放手即收盾）'],
+      ['✊ 握拳保持3秒', '准星满100%释放水车合击大招'],
+    ];
+
+    for (let i = 0; i < 4; i++) {
+      const ry = 84 + i * 76;
+      drawRoundedRect(guideCtx, 36, ry, 462, 64, 14);
+      guideCtx.fillStyle = 'rgba(18, 42, 62, 0.78)';
+      guideCtx.fill();
+      guideCtx.fillStyle = '#ffe3a3';
+      guideCtx.font = '700 21px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(leftRows[i][0], 52, ry + 27);
+      guideCtx.fillStyle = '#d4eef0';
+      guideCtx.font = '500 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(leftRows[i][1], 52, ry + 51, 430);
+
+      drawRoundedRect(guideCtx, 526, ry, 462, 64, 14);
+      guideCtx.fillStyle = 'rgba(16, 46, 66, 0.84)';
+      guideCtx.fill();
+      guideCtx.fillStyle = '#8ef8ff';
+      guideCtx.font = '700 21px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(rightRows[i][0], 542, ry + 27);
+      guideCtx.fillStyle = '#d8f3f5';
+      guideCtx.font = '500 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(rightRows[i][1], 542, ry + 51, 430);
+    }
+
+    guideCtx.fillStyle = '#ffd98e';
+    guideCtx.font = '600 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText(
+      '提示：平视下方金色【跳过说明 · 拔刀开战 →】按钮、轻点手机盲操板或右手捏合均可一键跳过',
+      40,
+      428,
+      w - 80,
+    );
+
+    guideTex.needsUpdate = true;
+  }
+
+  function renderUltChargeRing(progress) {
+    const clamped = Math.max(0, Math.min(1, Number(progress) || 0));
+    const bucket = Math.round(clamped * 100);
+    if (bucket === lastUltChargeBucket) return;
+    lastUltChargeBucket = bucket;
+
+    const c = ultChargeCtx;
+    c.clearRect(0, 0, 256, 256);
+    if (bucket <= 0) {
+      ultChargeTex.needsUpdate = true;
+      return;
+    }
+
+    const cx = 128;
+    const cy = 108;
+    const r = 74;
+
+    c.beginPath();
+    c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.lineWidth = 12;
+    c.strokeStyle = 'rgba(12, 28, 44, 0.78)';
+    c.stroke();
+
+    c.beginPath();
+    c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.lineWidth = 8;
+    c.strokeStyle = 'rgba(125, 249, 255, 0.24)';
+    c.stroke();
+
+    const grad = c.createLinearGradient(44, 32, 212, 184);
+    grad.addColorStop(0, '#7df9ff');
+    grad.addColorStop(0.65, '#38bdf8');
+    grad.addColorStop(1, '#ffd98e');
+
+    c.beginPath();
+    c.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (bucket / 100));
+    c.lineWidth = 13;
+    c.lineCap = 'round';
+    c.strokeStyle = grad;
+    c.stroke();
+
+    drawRoundedRect(c, 34, 198, 188, 44, 22);
+    c.fillStyle = 'rgba(8, 24, 38, 0.92)';
+    c.fill();
+    c.lineWidth = 2.5;
+    c.strokeStyle = bucket >= 90 ? '#ffd98e' : '#7df9ff';
+    c.stroke();
+
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = bucket >= 90 ? '#ffe49e' : '#d8fcff';
+    c.font = '700 22px "PingFang SC", "Microsoft YaHei", sans-serif';
+    c.fillText(`✊ 奥义 ${bucket}%`, 128, 220);
+    c.textAlign = 'left';
+    c.textBaseline = 'alphabetic';
+
+    ultChargeTex.needsUpdate = true;
   }
 
   function renderFullPlaque(state) {
@@ -396,21 +580,21 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     ctx.fillText(state.rightTop, canvas.width - 42, boxY + 42);
 
     ctx.fillStyle = state.danger ? '#ffadb8' : '#a5f1ec';
-    ctx.font = '600 21px "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(state.rightBottom, canvas.width - 42, boxY + 98);
+    ctx.font = '600 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(state.rightBottom, canvas.width - 42, boxY + 98, 380);
     ctx.textAlign = 'left';
 
     // Slim bottom status line
     ctx.fillStyle = '#cfe8ea';
-    ctx.font = '500 21px "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(state.hintLine, 42, boxY + 98, 560);
+    ctx.font = '500 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(state.hintLine, 42, boxY + 98, 536);
 
     texture.needsUpdate = true;
   }
 
   function renderMenuSlot(slot, state) {
     const bucketProgress = Math.round(state.progress * 50) / 50;
-    const sig = `${state.menuId}|${state.ready}|${state.hovered}|${bucketProgress}|${state.dwellBadge}|${state.title}|${state.sub}|${state.secondary}`;
+    const sig = `${state.menuId}|${state.ready}|${state.hovered}|${bucketProgress}|${state.dwellBadge}|${state.title}|${state.sub}|${state.secondary}|${Boolean(state.goldPrimary)}`;
     if (sig === slot.lastSig) return;
     slot.lastSig = sig;
 
@@ -420,7 +604,15 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     c.clearRect(0, 0, w, h);
 
     const grad = c.createLinearGradient(0, 0, w, h);
-    if (state.hovered) {
+    if (state.goldPrimary) {
+      if (state.hovered) {
+        grad.addColorStop(0, 'rgba(92, 66, 18, 0.96)');
+        grad.addColorStop(1, 'rgba(28, 72, 86, 0.96)');
+      } else {
+        grad.addColorStop(0, 'rgba(64, 46, 14, 0.94)');
+        grad.addColorStop(1, 'rgba(18, 44, 58, 0.94)');
+      }
+    } else if (state.hovered) {
       grad.addColorStop(0, state.secondary ? 'rgba(42, 74, 98, 0.96)' : 'rgba(24, 96, 108, 0.96)');
       grad.addColorStop(1, 'rgba(18, 52, 80, 0.96)');
     } else {
@@ -431,12 +623,14 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     c.fillStyle = grad;
     c.fill();
 
-    c.lineWidth = state.hovered ? 5 : 3;
+    c.lineWidth = state.hovered ? 5 : state.goldPrimary ? 4 : 3;
     c.strokeStyle = state.hovered
       ? '#7df9ff'
-      : state.secondary
-        ? 'rgba(233, 206, 154, 0.62)'
-        : 'rgba(158, 243, 237, 0.72)';
+      : state.goldPrimary
+        ? '#ffd98e'
+        : state.secondary
+          ? 'rgba(233, 206, 154, 0.62)'
+          : 'rgba(158, 243, 237, 0.72)';
     c.stroke();
 
     const cx = 112;
@@ -453,29 +647,35 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
       c.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * bucketProgress);
       c.lineWidth = 11;
       c.lineCap = 'round';
-      c.strokeStyle = '#7df9ff';
+      c.strokeStyle = state.goldPrimary ? '#ffd98e' : '#7df9ff';
       c.stroke();
     }
 
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillStyle = state.hovered ? '#7df9ff' : '#ecd09c';
+    c.fillStyle = state.hovered ? '#7df9ff' : state.goldPrimary ? '#ffe39f' : '#ecd09c';
     c.font = '700 28px "PingFang SC", "Microsoft YaHei", sans-serif';
     c.fillText(
-      !state.ready ? '载入' : bucketProgress > 0.02 ? `${Math.round(bucketProgress * 100)}%` : state.dwellBadge,
+      !state.ready
+        ? '载入'
+        : bucketProgress > 0.02
+          ? `${Math.round(bucketProgress * 100)}%`
+          : state.goldPrimary
+            ? '跳过'
+            : state.dwellBadge,
       cx,
       cy,
     );
 
     c.textAlign = 'left';
     c.textBaseline = 'alphabetic';
-    c.fillStyle = '#f5fbfa';
+    c.fillStyle = state.goldPrimary ? '#fff5da' : '#f5fbfa';
     c.font = state.secondary
       ? '700 36px "PingFang SC", "Microsoft YaHei", sans-serif'
       : '700 42px "PingFang SC", "Microsoft YaHei", sans-serif';
     c.fillText(state.title, 204, 112, w - 240);
 
-    c.fillStyle = state.hovered ? '#a8fbff' : '#c6dfe2';
+    c.fillStyle = state.hovered ? '#a8fbff' : state.goldPrimary ? '#ffe2a6' : '#c6dfe2';
     c.font = '500 25px "PingFang SC", "Microsoft YaHei", sans-serif';
     c.fillText(state.sub, 204, 166, w - 240);
 
@@ -484,7 +684,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     c.fill();
     if (bucketProgress > 0) {
       drawRoundedRect(c, 204, 198, Math.max(14, (w - 252) * bucketProgress), 14, 7);
-      c.fillStyle = '#7df9ff';
+      c.fillStyle = state.goldPrimary ? '#ffd98e' : '#7df9ff';
       c.fill();
     }
 
@@ -617,18 +817,38 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   function getMenuDescriptors(mode, difficulty = 'normal') {
     if (!isGlasses) return [];
     const diffLabel = difficulty === 'hashira' ? '柱合试炼（高烈度）' : '夜巡标准';
+    if (mode === 'guide') {
+      return [
+        {
+          slot: primaryBtn,
+          id: 'btn-skip-guide',
+          secondary: false,
+          goldPrimary: true,
+          title: '跳过说明 · 拔刀开战 →',
+        },
+        {
+          slot: secondaryBtn,
+          id: 'btn-toggle-difficulty',
+          secondary: true,
+          goldPrimary: false,
+          title: `试炼强度：${diffLabel}`,
+        },
+      ];
+    }
     if (mode === 'welcome') {
       return [
         {
           slot: primaryBtn,
           id: 'btn-start-battle',
           secondary: false,
+          goldPrimary: false,
           title: '拔刀开战 · 守护藤花结界',
         },
         {
           slot: secondaryBtn,
           id: 'btn-toggle-difficulty',
           secondary: true,
+          goldPrimary: false,
           title: `试炼强度：${diffLabel}`,
         },
       ];
@@ -639,12 +859,14 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
           slot: primaryBtn,
           id: 'btn-play-again',
           secondary: false,
+          goldPrimary: false,
           title: '再来一局 · 重新拔刀迎战',
         },
         {
           slot: secondaryBtn,
           id: 'btn-back-welcome',
           secondary: true,
+          goldPrimary: false,
           title: '返回庭院 · 切换试炼强度',
         },
       ];
@@ -654,6 +876,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
 
   return {
     group,
+    guideMesh,
     menuGroup: primaryBtn.group,
     menuHitMesh: primaryBtn.hitMesh,
     secondaryMenuGroup: secondaryBtn.group,
@@ -662,29 +885,34 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     lockHudMesh,
     reticleGroup,
     reticle,
+    ultChargeMesh,
     skillBannerMesh,
     triggerSkillBanner,
     getActiveMenuId(mode) {
       if (!isGlasses) return null;
+      if (mode === 'guide') return 'btn-skip-guide';
       if (mode === 'welcome') return 'btn-start-battle';
       if (mode === 'result') return 'btn-play-again';
       return null;
     },
     getActiveMenuMeshes(mode) {
       if (!isGlasses) return [];
-      if (mode === 'welcome' || mode === 'result') {
+      if (mode === 'guide' || mode === 'welcome' || mode === 'result') {
         return [primaryBtn.hitMesh, secondaryBtn.hitMesh];
       }
       return [];
     },
     stats: () => ({
       plaqueVisible: group.visible,
+      guidePlaqueVisible: guideMesh.visible,
       plaquePos: group.position.toArray().map(n => Number(n.toFixed(3))),
       plaqueScale: plaqueMesh.scale.toArray().map(n => Number(n.toFixed(3))),
       primaryMenuVisible: primaryBtn.group.visible,
       secondaryMenuVisible: secondaryBtn.group.visible,
       lockVisible: lockGroup.visible,
       lockHudVisible: lockGroup.visible && lockHudMesh.visible,
+      ultChargeVisible: ultChargeMesh.visible,
+      ultChargeProgress: Number(currentUltChargeProgress.toFixed(3)),
       offscreenDirection,
       skillBannerVisible: skillBannerMesh.visible,
     }),
@@ -698,6 +926,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
       gazeOnTarget = false,
       hoveredMenuId = null,
       menuProgress = 0,
+      ultChargeProgress = 0,
       gazeDwellMs = 2000,
       deviceModel = '',
       handTracking = false,
@@ -709,13 +938,15 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
       nowSec = 0,
       dt = 0.016,
     }) {
+      const showing3dGuide = isGlasses && mode === 'guide';
+      guideMesh.visible = showing3dGuide;
       if (isGlasses) {
-        group.visible = true;
+        group.visible = !showing3dGuide;
       } else {
         group.visible = mode === 'welcome' && window.innerWidth >= 700;
       }
 
-      // Smoothly transition Plaque between Phase A (centered 3D welcome/result card) & Phase B (slim 1:1 top-rim bar)
+      // Smoothly transition Plaque & Menu button Y heights across guide / welcome / battle / result
       if (isGlasses) {
         if (mode === 'battle') {
           targetPlaquePos.set(battle.player.x || 0, 1.85, (battle.player.z || 0) - 2.24);
@@ -726,6 +957,11 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         }
         group.position.lerp(targetPlaquePos, Math.min(1, dt * 10));
         plaqueMesh.scale.lerp(targetPlaqueScale, Math.min(1, dt * 10));
+
+        const targetPrimaryY = mode === 'guide' ? 1.36 : 1.52;
+        const targetSecondaryY = mode === 'guide' ? 1.11 : 1.23;
+        primaryBtn.group.position.y += (targetPrimaryY - primaryBtn.group.position.y) * Math.min(1, dt * 12);
+        secondaryBtn.group.position.y += (targetSecondaryY - secondaryBtn.group.position.y) * Math.min(1, dt * 12);
       }
 
       // Phase A Dual 3D Spatial Menu Buttons
@@ -742,23 +978,26 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
           const hovered = hoveredMenuId === desc.id;
           const confirmHint =
             gazeDwellMs > 0
-              ? `保持注视 ${dwellBadge} 自动确认 · 或${handTracking ? '右手捏合 / ' : ''}轻点触控板秒选`
-              : `已关闭注视读秒 · 请${handTracking ? '右手隔空捏合 或 ' : ''}轻点触控板确认`;
+              ? `保持注视 ${dwellBadge} 自动确认 · 或${handTracking ? '右手捏合 / ' : ''}轻点盲操板秒选`
+              : `已关闭注视读秒 · 请${handTracking ? '右手隔空捏合 或 ' : ''}轻点盲操板确认`;
           const idleHint = desc.secondary
             ? gazeDwellMs > 0
-              ? `目光移此停留 ${dwellBadge} 切换${mode === 'welcome' ? '试炼难度' : '返回庭院'}`
-              : `瞄准此牌后${handTracking ? '右手捏合' : '轻点触控板'}切换`
-            : gazeDwellMs > 0
-              ? `注视此牌 ${dwellBadge} 自动开战 · 不看屏轻点触控板亦可立即开战`
-              : `${handTracking ? '右手隔空捏合' : '轻点触控板'}立即拔刀开战`;
+              ? `目光移此停留 ${dwellBadge} 切换${mode === 'result' ? '返回庭院' : '试炼难度'}`
+              : `瞄准此牌后${handTracking ? '右手捏合' : '轻点盲操板'}切换`
+            : desc.goldPrimary
+              ? `注视 ${dwellBadge} / 轻点手机盲操板 / 右手捏合 均可一键跳过直接开战`
+              : gazeDwellMs > 0
+                ? `注视此牌 ${dwellBadge} 自动开战 · 不看屏轻点盲操板亦可立即开战`
+                : `${handTracking ? '右手隔空捏合' : '轻点盲操板'}立即拔刀开战`;
           renderMenuSlot(desc.slot, {
             menuId: desc.id,
             secondary: desc.secondary,
-            ready: assetsReady || desc.secondary,
+            goldPrimary: Boolean(desc.goldPrimary),
+            ready: assetsReady || desc.secondary || Boolean(desc.goldPrimary),
             hovered,
             progress: hovered ? menuProgress : 0,
             dwellBadge,
-            title: !assetsReady && !desc.secondary ? '正在唤醒炭治郎与藤花结界…' : desc.title,
+            title: !assetsReady && !desc.secondary && !desc.goldPrimary ? '正在唤醒炭治郎与藤花结界…' : desc.title,
             sub: hovered ? confirmHint : idleHint,
           });
           desc.slot.cardMesh.scale.setScalar(hovered ? 1.035 : 1.0);
@@ -772,14 +1011,20 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
           deviceModel && deviceModel !== 'Phone' && deviceModel !== 'Browser' ? deviceModel : 'AR 眼镜';
         const inputTag = handTracking
           ? `${cleanModel} · 6DoF 手势`
-          : `${cleanModel} · 双目透视盲滑`;
+          : `${cleanModel} · 全时盲操`;
 
-        if (mode === 'battle') {
+        if (showing3dGuide) {
+          renderGuidePlaque({
+            badge: xrSessionActive ? inputTag : 'AR 眼镜待命',
+            difficulty,
+            handTracking,
+          });
+        } else if (mode === 'battle') {
           const handStatus = handActive
-            ? '🖐️ 右手手势追踪中 · 左手推盘走位'
+            ? '🖐️ 手势中 · 📱 点斩/快滑闪全时可用'
             : handTracking
-              ? '🖐️ 抬右手出招 · 📱 盲操已自动兜底'
-              : '📱 点斩 · 上拂水车 · 横拂/双击突刺 · 双指架盾';
+              ? '🖐️ 连挥水车·出拳刺·竖掌盾·握拳3s'
+              : '📱 点斩 · 快滑左右闪 · 双指盾';
           renderCompactBattleStrip({
             hp: Math.round(battle.hp),
             energy: Math.floor(battle.energy),
@@ -789,18 +1034,18 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             rightBottom: hazard
               ? `【危】${hazard.label} ${hazard.remaining.toFixed(1)}s`
               : battle.guarding
-                ? '【流流舞 · 水镜守势弹反中】'
+                ? '【流流舞 · 水镜持续守势弹反中】'
                 : handStatus,
             hintLine:
               gestureHint ||
               (difficulty === 'hashira' ? '柱合试炼 · ' : '') +
                 (lockedTarget
                   ? `已锁${lockedTarget.boss ? '堕姬' : '恶鬼'}（转头不丢锁）· 目光扫向别处恶鬼即刻换锁`
-                  : '目光扫过前方恶鬼零延迟秒锁'),
+                  : '目光扫过前方恶鬼零延迟秒锁（免晃动手机）'),
           });
         } else {
           renderFullPlaque({
-            eyebrow: '鬼灭之刃 · 夜巡街道 WebXR 空间铭牌',
+            eyebrow: '鬼灭之刃 · 夜巡街道 WebXR 空间铭牌 v2.0',
             badge: xrSessionActive ? inputTag : 'AR 眼镜待命',
             title:
               mode === 'welcome'
@@ -813,17 +1058,17 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
                 ? `当前试炼：${difficulty === 'hashira' ? '柱合试炼（高烈度）' : '夜巡标准'} · 平视下方按钮或轻点手机开战`
                 : `本局击破 ${battle.kills} · 弹反/破招 ${battle.perfect} · 水车合击 ${battle.musouCount}`,
             footer: handTracking
-              ? '右手手势（挥斩·画圈·前刺·握拳·张掌）与手机盲操动态协同 · 左手推盘走位'
-              : '手机盲操：点按挥斩 · 上拂水车 · 左右拂突刺 · 双指架盾 · 按住走位',
+              ? '右手：连挥水车 · 出拳/指突刺 · 竖掌✋架盾 · 握拳3s大招 ｜ 盲操板全时点斩/快滑闪避/走位'
+              : '全时盲操：轻点挥斩 · 左右快滑闪避 · 双指按住架盾 · 按住>0.2s平滑走位（免晃动手机）',
           });
         }
       } else {
         renderFullPlaque({
-          eyebrow: 'METATOUR WEBAR · 空间锚定铭牌',
+          eyebrow: 'METATOUR WEBAR · 空间锚定铭牌 v2.0',
           badge: megaSynced ? 'Mega 锚点已校准' : '2.2m 真人比例',
           title: '鬼灭之刃 · 藤花结界',
           subtitle: '地面 y = 0m · 核心展项位于正前方 2.2m · 宽度 ≤ 1.5m',
-          footer: '支持元游手持全屏 WebAR / XREAL 眼镜手势+注视 WebXR / 桌面 3D 环视',
+          footer: '支持元游手持全屏 WebAR / S24 眼镜隔空手势+全时盲操 v2.0 / 桌面 3D 环视',
         });
       }
 
@@ -866,9 +1111,9 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             maxHp: Math.max(1, Math.ceil(lockedTarget.maxHp || 60)),
             hazardText: Boolean(targetHazard),
             subLine: targetHazard
-              ? `【危 ${targetHazard.remaining.toFixed(1)}s】握拳/双指弹反 或 前刺破招！`
+              ? `【危 ${targetHazard.remaining.toFixed(1)}s】竖掌✋/双指架盾 · 快滑闪避 · 出拳破招！`
               : gazeOnTarget
-                ? '视线已锁 · 挥斩 / 画圈水车 / 前刺'
+                ? '视线已锁 · 连挥水车 / 出拳突刺 / 竖掌盾 / 握拳3s大招'
                 : '粘性保持（看别处恶鬼即换锁）',
           });
         }
@@ -906,7 +1151,17 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         skillBannerMesh.visible = false;
       }
 
-      // Update World-Space 3D Reticle + Off-FOV Chevrons (◀ / ▶)
+      // Update World-Space 3D Reticle + 3s Fist Charge Ring + Off-FOV Chevrons (◀ / ▶)
+      currentUltChargeProgress = mode === 'battle' ? Math.max(0, Math.min(1, Number(ultChargeProgress) || 0)) : 0;
+      if (currentUltChargeProgress > 0.005) {
+        reticleGroup.visible = true;
+        ultChargeMesh.visible = true;
+        renderUltChargeRing(currentUltChargeProgress);
+      } else {
+        ultChargeMesh.visible = false;
+        reticleGroup.visible = isGlasses;
+      }
+
       offscreenDirection = null;
       if (reticleGroup.visible && camera) {
         camera.getWorldPosition(worldPos);
@@ -922,8 +1177,24 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         camera.getWorldPosition(camPosWorld);
         reticleGroup.lookAt(camPosWorld);
 
-        reticle.material.color.set(hoveredMenuId ? '#7df9ff' : gazeOnTarget ? '#ffd98e' : '#a5f1ec');
-        reticle.scale.setScalar(hoveredMenuId ? 1.32 + menuProgress * 0.35 : gazeOnTarget ? 1.18 : 1.0);
+        reticle.material.color.set(
+          currentUltChargeProgress > 0.005
+            ? '#ffd98e'
+            : hoveredMenuId
+              ? '#7df9ff'
+              : gazeOnTarget
+                ? '#ffd98e'
+                : '#a5f1ec',
+        );
+        reticle.scale.setScalar(
+          currentUltChargeProgress > 0.005
+            ? 1.12 + currentUltChargeProgress * 0.25
+            : hoveredMenuId
+              ? 1.32 + menuProgress * 0.35
+              : gazeOnTarget
+                ? 1.18
+                : 1.0,
+        );
 
         const guideEnemy = mode === 'battle' ? lockedTarget || nearestTarget : null;
         if (guideEnemy && guideEnemy.hp > 0) {

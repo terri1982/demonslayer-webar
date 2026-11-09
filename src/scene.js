@@ -1439,19 +1439,33 @@ export function createSpatialCombatVfx(worldRoot) {
       if (battle.musouTime >= 0) {
         const mp = clamp(battle.musouTime / Math.max(0.5, battle.invincible || 2.2), 0, 1);
         ultGroup.visible = true;
-        ultGroup.position.set(battle.player.x, 1.28, battle.player.z - 1.65 - mp * 2.1);
+        if (glassesMode && camera) {
+          tmpTargetWorld.copy(camWorld).addScaledVector(camFwd, 2.05 + mp * 1.45);
+          tmpTargetWorld.y -= 0.12;
+          worldRoot.worldToLocal(tmpTargetWorld);
+          ultGroup.position.copy(tmpTargetWorld);
+        } else {
+          ultGroup.position.set(battle.player.x, 1.28, battle.player.z - 1.65 - mp * 2.1);
+        }
         dragonHelix.visible = true;
         dragonHelix.rotation.set(nowSec * 3.2, nowSec * 2.1, nowSec * 4.4);
-        dragonHelix.scale.setScalar(0.92 + Math.sin(mp * Math.PI) * 0.42);
-        dragonMat.opacity = 0.54;
+        dragonHelix.scale.setScalar((glassesMode ? 0.78 : 0.92) + Math.sin(mp * Math.PI) * 0.36);
+        dragonMat.opacity = 0.62;
         surgeHalo.rotation.z = -nowSec * 4.5;
-        surgeHalo.scale.setScalar(1.12 + Math.sin(nowSec * 8) * 0.14);
-        surgeMat.opacity = 0.44;
+        surgeHalo.scale.setScalar((glassesMode ? 0.95 : 1.12) + Math.sin(nowSec * 8) * 0.14);
+        surgeMat.opacity = 0.5;
       } else if (surgeTimer > 0) {
         surgeTimer = Math.max(0, surgeTimer - dt);
         const sp = 1 - surgeTimer / 0.72;
         ultGroup.visible = surgeTimer > 0.005;
-        ultGroup.position.set(battle.player.x, 1.02 + sp * 0.48, battle.player.z - 1.9);
+        if (glassesMode && camera) {
+          tmpTargetWorld.copy(camWorld).addScaledVector(camFwd, 2.05);
+          tmpTargetWorld.y -= 0.24 - sp * 0.28;
+          worldRoot.worldToLocal(tmpTargetWorld);
+          ultGroup.position.copy(tmpTargetWorld);
+        } else {
+          ultGroup.position.set(battle.player.x, 1.02 + sp * 0.48, battle.player.z - 1.9);
+        }
         dragonHelix.visible = false;
         surgeHalo.rotation.z = nowSec * 5.2;
         surgeHalo.scale.setScalar(0.76 + sp * 0.58);

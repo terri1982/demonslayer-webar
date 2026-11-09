@@ -481,9 +481,13 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     return g.guarding;
   }
 
-  // Skill 4 (Air Gesture 'open-palm' / Trackpad 'swipe-down' / Key '3'): Full-Concentration Ultimate / Breath Surge
-  function castUltimate(targetId) {
+  // Skill 4 (Air Gesture 3.0s 'fist-ult' / Trackpad 'swipe-down' / Key '3'): Full-Concentration Ultimate / Breath Surge
+  function castUltimate(targetId, { forceMusou = false } = {}) {
     if (g.status !== 'playing' || g.musouTime >= 0) return false;
+    if (forceMusou) {
+      g.energy = 100;
+      return attack('musou', targetId);
+    }
     if (g.energy >= 100) {
       return attack('musou', targetId);
     }
@@ -514,16 +518,14 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
     return true;
   }
 
-  // Left-Hand Blind Floating Steering Pad (onTrackpadMove: x, y, forward in [-1, 1])
+  // Blind Trackpad Continuous Push Walk (>200ms onTrackpadMove: x, y, forward in [-1, 1]):
+  // Strictly decoupled from <=200ms quick swipe-left/swipe-right dodge (zero crosstalk!).
   function setMoveAxes(x = 0, y = 0, active = false, forward = undefined) {
     g.steerActive = Boolean(active);
     g.steerX = g.steerActive ? clamp(Number(x) || 0, -1, 1) : 0;
     g.steerY = g.steerActive ? clamp(Number(y) || 0, -1, 1) : 0;
     const rawForward = forward !== undefined ? Number(forward) || 0 : -g.steerY;
     g.steerForward = g.steerActive ? clamp(rawForward, -1, 1) : 0;
-    if (g.steerActive && Math.abs(g.steerX) > 0.62 && g.hazards.length > 0 && g.dodgeCd <= 0) {
-      dodge(g.steerX > 0 ? 1 : -1);
-    }
   }
 
   function resetFootwork() {
@@ -698,6 +700,10 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
         attack(q.kind, q.targetId, q.opts);
       }
     }
+    if (g.steerActive) {
+      g.footworkBaseX = clamp(g.footworkBaseX + g.steerX * dt * 1.85, -0.78, 0.78);
+      g.player.z = clamp(g.player.z - g.steerForward * dt * 1.45, -0.75, 0.55);
+    }
     if (g.dodgeTime > 0) {
       g.player.x = clamp(
         g.footworkBaseX + Math.sin((g.dodgeTime / 0.48) * Math.PI) * 0.52 * g.dodgeDirection,
@@ -705,9 +711,7 @@ export function createBattle({ allySide = -1, bossAt = BOSS_AT, difficulty = 'no
         0.85,
       );
     } else if (g.steerActive) {
-      g.player.x = clamp(g.player.x + g.steerX * dt * 1.85, -0.78, 0.78);
-      g.player.z = clamp(g.player.z - g.steerForward * dt * 1.45, -0.75, 0.55);
-      g.footworkBaseX = g.player.x;
+      g.player.x = g.footworkBaseX;
     } else if (!g.isGlasses) {
       g.player.x += (0 - g.player.x) * Math.min(1, dt * 6);
       g.player.z += (0 - g.player.z) * Math.min(1, dt * 6);

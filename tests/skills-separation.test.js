@@ -150,35 +150,34 @@ test('3D VFX separation: createSlashArc stays hidden on thrust, while wheelVisib
   assert.equal(vfx.stats().thrustVisible, false);
 });
 
-test('Blind trackpad axial cone filter & double-tap thrust prevent oblique flick crosstalk', () => {
+test('v2.0 skill & blind-pad separation: blind-pad tap/swipe-left/right never misfire Thrust, while S24 wave-combo & thrust separate cleanly', () => {
   installMinimalBrowserGlobals();
   const log = [];
   const bridge = createSpatialInputBridge({
     isGlasses: true,
     isMenuPhase: () => false,
     onSlash: e => log.push(`slash:${e.direction}:${e.source}`),
-    onWaterWheel: e => log.push(`wheel:${e.source}`),
-    onThrust: e => log.push(`thrust:${e.direction || 'center'}:${e.source}`),
+    onDodge: e => log.push(`dodge:${e.direction}:${e.source}`),
+    onWaterWheel: e => log.push(`wheel:${e.direction}:${e.source}`),
+    onThrust: e => log.push(`thrust:${e.rawDirection}:${e.source}`),
     onUltimate: e => log.push(`ult:${e.source}`),
   });
 
-  // 1. Clean vertical flick -> Water Wheel:
-  bridge.simulateTrackpadGesture({ type: 'swipe-up', dx: 0.12, dy: -0.88, timestampMs: 1000 });
-  assert.equal(log.at(-1), 'wheel:trackpad-swipe-up');
+  // 1. S24 right-hand wave-combo (3 horizontal waves) -> Water Wheel:
+  bridge.simulateHandGesture({ type: 'wave-combo', direction: 'lrl', clockwise: true });
+  assert.equal(log.at(-1), 'wheel:lrl:hand-wave-combo');
 
-  // 2. Ambiguous 42-deg diagonal flick -> demoted to oblique slash, NOT misfired as Water Wheel or Thrust!
-  bridge.simulateTrackpadGesture({ type: 'swipe-up', dx: 0.66, dy: -0.72, timestampMs: 1400 });
-  assert.equal(log.at(-1), 'slash:up:trackpad-oblique-slash');
+  // 2. S24 right-hand forward punch/finger -> Thrust:
+  bridge.simulateHandGesture({ type: 'thrust', direction: 'forward', speed: 1.5 });
+  assert.equal(log.at(-1), 'thrust:forward:hand-thrust');
 
-  bridge.simulateTrackpadGesture({ type: 'swipe-right', dx: 0.72, dy: -0.65, timestampMs: 1800 });
-  assert.equal(log.at(-1), 'slash:right:trackpad-oblique-slash');
+  // 3. Even while handActive === true, blind-pad tap -> Normal Attack (never blocked, never double-tap thrust):
+  bridge.simulateTrackpadGesture({ type: 'tap', dx: 0, dy: 0, timestamp: 3000 });
+  bridge.simulateTrackpadGesture({ type: 'tap', dx: 0, dy: 0, timestamp: 3120 });
+  assert.deepEqual(log.slice(-2), ['slash:right:trackpad-tap', 'slash:right:trackpad-tap']);
 
-  // 3. Clean horizontal flick -> Thrust:
-  bridge.simulateTrackpadGesture({ type: 'swipe-right', dx: 0.9, dy: -0.18, timestampMs: 2200 });
-  assert.equal(log.at(-1), 'thrust:right:trackpad-swipe-right');
-
-  // 4. Rapid double-tap (<= 255ms) -> crisp poke followed immediately by Thrust!
-  bridge.simulateTrackpadGesture({ type: 'tap', dx: 0, dy: 0, timestampMs: 3000 });
-  bridge.simulateTrackpadGesture({ type: 'tap', dx: 0, dy: 0, timestampMs: 3170 });
-  assert.deepEqual(log.slice(-2), ['slash:right:trackpad-tap', 'thrust:center:trackpad-double-tap']);
+  // 4. Blind-pad quick swipe-left / swipe-right -> Left / Right Dodge:
+  bridge.simulateTrackpadGesture({ type: 'swipe-left', dx: -0.85, dy: 0.05, timestamp: 3400 });
+  bridge.simulateTrackpadGesture({ type: 'swipe-right', dx: 0.85, dy: -0.04, timestamp: 3600 });
+  assert.deepEqual(log.slice(-2), ['dodge:left:trackpad-swipe-left', 'dodge:right:trackpad-swipe-right']);
 });

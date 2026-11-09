@@ -49,21 +49,34 @@ export function androidRotationVectorToThreeQuaternion(qx, qy, qz, qw, screenAng
   return target;
 }
 
+export const V2_INTERACTION_GUIDE_ITEMS = [
+  { key: '轻点盲操板', desc: '普通攻击 / 菜单确认（全时段生效，无需低头找按键）' },
+  { key: '快速左滑 / 右滑 (<=200ms)', desc: '左闪 / 右闪紧急横向闪避（全时段生效）' },
+  { key: '按住盲操板持续推 (>200ms)', desc: '平滑走位（上推前进、下拉后退、左右横移，零闪避串扰）' },
+  { key: '右手左右连挥 3 下 (S24)', desc: '贰之型·水车（左-右-左 或 右-左-右 旋斩群攻）' },
+  { key: '右手向前出拳 / 出指 (S24)', desc: '柒之型·雫波纹击刺（9.2m 直线贯通破招）' },
+  { key: '右手手掌 ✋ 竖起朝前 (S24)', desc: '持续水镜格挡弹反（放手即收盾；双指按住亦可格挡）' },
+  { key: '右手握拳保持 3 秒 (S24)', desc: '准星蓄力环满 100% 释放全集中水车合击大招' },
+  { key: '免晃动手机 / Beam Pro', desc: '机身陀螺仪射线已彻底关闭，视线看向恶鬼即自动锁敌' },
+];
+
 // 2. Handheld / Desktop Pose Controller:
-// Priority 1: window.MetaTourWebAR?.onPose(pose => ...) (60Hz native container quaternion)
-// Priority 2: DeviceOrientationEvent 3DoF gyroscope
+// STRICT v1.5.4 Rule: In AR Glasses mode (isGlasses === true), phone/Beam Pro gyroscope & onPose are
+// 100% disabled (controllerRay: false) so moving or shaking the handheld body NEVER disturbs the view!
+// Priority 1 (Handheld only): window.MetaTourWebAR?.onPose(pose => ...) (60Hz native container quaternion)
+// Priority 2 (Handheld only): DeviceOrientationEvent 3DoF gyroscope
 // Priority 3: Touch / Mouse orbit-look drag
-export function createPoseController({ onExternalRecenter, onOrientationChange } = {}) {
+export function createPoseController({ isGlasses = false, onExternalRecenter, onOrientationChange } = {}) {
   let nativePoseActive = false;
   let nativePoseSource = '';
   let lastHeadingGen = null;
   let latestContainerAngle = null;
   let gyroActive = false;
-  let gyroPermission = 'unknown';
+  let gyroPermission = isGlasses ? 'disabled-in-glasses' : 'unknown';
   let latestGyro = null;
   let baselineYaw = null;
   let dragYaw = 0;
-  let dragPitch = -0.06;
+  let dragPitch = isGlasses ? 0 : -0.06;
   let nativePoseCount = 0;
   let resettingInternally = false;
 
@@ -106,10 +119,11 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
   function resetLocalHeading() {
     baselineYaw = null;
     dragYaw = 0;
-    dragPitch = -0.06;
+    dragPitch = isGlasses ? 0 : -0.06;
   }
 
   function ingestNativePose(pose) {
+    if (isGlasses) return;
     const parsed = parseQuat(pose?.quaternion ?? pose?.rotation ?? pose);
     if (!parsed) return;
 
@@ -147,7 +161,7 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
     }
   }
 
-  // Subscribe to MetaTourWebAR 60Hz native pose stream & v1.4.0 orientation change hooks if present.
+  // Subscribe to MetaTourWebAR 60Hz native pose stream ONLY in non-glasses mode:
   let boundHost = null;
   function handleOrientationSignal(detail = null) {
     if (detail && detail.screenAngle !== undefined && Number.isFinite(Number(detail.screenAngle))) {
@@ -165,6 +179,7 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
   }
 
   function tryBindMetaTourPose() {
+    if (isGlasses) return;
     const host = window.MetaTourWebAR;
     if (!host || host === boundHost) return;
     if (typeof host.onPose === 'function') {
@@ -180,8 +195,10 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
       } catch {}
     }
   }
-  tryBindMetaTourPose();
-  window.addEventListener('metatour:pose', e => ingestNativePose(e?.detail ?? e));
+  if (!isGlasses) {
+    tryBindMetaTourPose();
+    window.addEventListener('metatour:pose', e => ingestNativePose(e?.detail ?? e));
+  }
 
   const onHostResetEvent = () => {
     if (resettingInternally) return;
@@ -191,19 +208,28 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
   window.addEventListener('metatour-heading-reset', onHostResetEvent);
   window.addEventListener('metatour-view-reset', onHostResetEvent);
   window.addEventListener('xreal-view-reset', onHostResetEvent);
-  window.addEventListener('metatour-orientation', e => handleOrientationSignal(e?.detail ?? null));
-  window.addEventListener('orientationchange', () => handleOrientationSignal(null));
-  window.screen?.orientation?.addEventListener?.('change', () => handleOrientationSignal(null));
+  if (!isGlasses) {
+    window.addEventListener('metatour-orientation', e => handleOrientationSignal(e?.detail ?? null));
+    window.addEventListener('orientationchange', () => handleOrientationSignal(null));
+    window.screen?.orientation?.addEventListener?.('change', () => handleOrientationSignal(null));
+  }
 
   function onDeviceOrientation(e) {
+    if (isGlasses) return;
     if (![e.alpha, e.beta, e.gamma].every(Number.isFinite)) return;
     if (e.alpha === 0 && e.beta === 0 && e.gamma === 0) return;
     latestGyro = { alpha: e.alpha, beta: e.beta, gamma: e.gamma };
     gyroActive = true;
   }
-  window.addEventListener('deviceorientation', onDeviceOrientation);
+  if (!isGlasses) {
+    window.addEventListener('deviceorientation', onDeviceOrientation);
+  }
 
   async function requestSensors() {
+    if (isGlasses) {
+      gyroPermission = 'disabled-in-glasses';
+      return false;
+    }
     tryBindMetaTourPose();
     if (typeof DeviceOrientationEvent === 'undefined') {
       gyroPermission = 'unavailable';
@@ -224,6 +250,10 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
   }
 
   function getQuaternion() {
+    if (isGlasses) {
+      outQuat.setFromEuler(new T.Euler(dragPitch, dragYaw, 0, 'YXZ'));
+      return outQuat;
+    }
     tryBindMetaTourPose();
     if (nativePoseActive) {
       outQuat.setFromAxisAngle(upAxis, -(baselineYaw || 0) + dragYaw).multiply(nativeQuat);
@@ -260,11 +290,12 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
     },
     drag(dx, dy) {
       dragYaw -= dx * 0.0032;
-      if (!nativePoseActive && !gyroActive) {
+      if (isGlasses || (!nativePoseActive && !gyroActive)) {
         dragPitch = T.MathUtils.clamp(dragPitch - dy * 0.0026, -0.75, 0.55);
       }
     },
     setPreferredOrientation(pref = 'auto') {
+      if (isGlasses) return false;
       try {
         return Boolean(window.MetaTourWebAR?.setPreferredOrientation?.(pref));
       } catch {
@@ -274,8 +305,15 @@ export function createPoseController({ onExternalRecenter, onOrientationChange }
     stats: () => ({
       containerMode: detectContainerMode(),
       containerVersion: window.MetaTourWebAR?.version || null,
+      controllerRayDisabled: Boolean(isGlasses),
       screenAngle: screenAngle(),
-      source: nativePoseActive ? 'metatour-native-60hz' : gyroActive ? 'device-orientation' : 'touch-mouse-drag',
+      source: isGlasses
+        ? 'glasses-head-only-no-phone-gyro'
+        : nativePoseActive
+          ? 'metatour-native-60hz'
+          : gyroActive
+            ? 'device-orientation'
+            : 'touch-mouse-drag',
       nativePoseActive,
       nativePoseSource,
       nativePoseCount,
@@ -579,25 +617,35 @@ export function createMegaAnchorBridge(worldRoot) {
   };
 }
 
-// 6. v1.5.2 Dynamic Coexistence Spatial Input Bridge (Zero-Coupling Hardware Primitives):
-// Adapts MetaTourWebAR v1.5.0 / v1.5.2 raw spatial primitives with dynamic hand/trackpad fallback:
-//   - Right-hand 6 air gestures (onHandGesture: slash / circle / thrust / fist-hold / fist-release / open-palm / pinch)
-//   - Dynamic blind-touch fallback (onTrackpadGesture: tap / swipe-up / swipe-left / swipe-right / swipe-down / hold)
-//     automatically taking over whenever the right hand is lowered or hand stream is inactive (zero deadlock!)
-//   - Left-hand floating steering wheel (onTrackpadMove: { x, y, forward, strafe, active })
+// 6. v1.5.4 Spatial Interaction v2.0 Bridge (All-Time Blind Pad + S24 Air Gestures + Zero Phone Shake):
+// Adapts MetaTourWebAR v1.5.4 spatial primitives:
+//   - All-Time Blind Trackpad (NEVER blocked by handActive === true):
+//       tap = normal slash / confirm; swipe-left / swipe-right (onDodge, <=200ms) = left / right dodge;
+//       onTrackpadMove (>200ms continuous push) = smooth walk with zero dodge crosstalk;
+//       2-finger hold (onSqueezeChange) = sustained guard; swipe-up = Water Wheel fallback; swipe-down = Ultimate fallback.
+//   - S24 Right-Hand Air Gestures (onHandGesture):
+//       slash = directional normal slash;
+//       wave-combo (lrl / rlr, 3 horizontal waves) = Water Wheel (贰之型·水车);
+//       thrust (forward punch or finger point) = Piercing Thrust (柒之型·雫波纹击刺);
+//       palm-hold / palm-release (upright open palm ✋ facing forward) = sustained Guard (immediate release);
+//       fist-charge (0..1 over 3.0s) / fist-charge-cancel / fist-ult = 3D reticle charge ring -> Ultimate!
+//   - Onboarding Spatial Interaction Guide (showInteractionGuide / dismissInteractionGuide / onInteractionGuideChange)
 //   - 3D spatial menu Gaze Dwell (setReticleTarget + onGazeProgress + onGazeSelect)
 export function createSpatialInputBridge({
   isGlasses = false,
   isMenuPhase = () => false,
   onSlash,
+  onDodge,
   onWaterWheel,
   onThrust,
   onGuardChange,
+  onUltCharge,
   onUltimate,
   onPinch,
   onMoveAxes,
   onMenuProgress,
   onMenuSelect,
+  onGuideChange,
   onViewReset,
 } = {}) {
   let boundHost = null;
@@ -606,15 +654,20 @@ export function createSpatialInputBridge({
   let lastProgressTargetId = null;
   let lastMenuSelectAt = -10000;
   let lastHandActiveAt = -10000;
-  let lastTapAt = -10000;
-  let squeezeDownAt = 0;
+  let lastDodgeAt = -10000;
+  let lastDodgeDir = null;
   let lastGestureSummary = '';
   let handGestureCount = 0;
   let trackpadGestureCount = 0;
+  let dodgeCount = 0;
   let moveEventCount = 0;
   let gazeSelectCount = 0;
   let holdReleaseTimer = null;
-  let squeezeHeld = false;
+  let palmGuardHeld = false;
+  let padSqueezeHeld = false;
+  let guardEmitted = false;
+  let ultChargeProgress = 0;
+  let guideOpen = false;
   const moveState = { x: 0, y: 0, forward: 0, strafe: 0, active: false };
   let latestInputState = null;
 
@@ -625,6 +678,31 @@ export function createSpatialInputBridge({
   function noteExternalHandActive(active) {
     if (active) {
       lastHandActiveAt = nowMs();
+    }
+  }
+
+  function syncGuardOutput(source = 'guard-sync') {
+    const nextActive = Boolean(palmGuardHeld || padSqueezeHeld);
+    if (holdReleaseTimer && !nextActive) {
+      window.clearTimeout(holdReleaseTimer);
+      holdReleaseTimer = null;
+    }
+    if (nextActive !== guardEmitted || nextActive) {
+      guardEmitted = nextActive;
+      onGuardChange?.(nextActive, source);
+    }
+  }
+
+  function clearAllGuard(source = 'guard-reset') {
+    if (holdReleaseTimer) {
+      window.clearTimeout(holdReleaseTimer);
+      holdReleaseTimer = null;
+    }
+    palmGuardHeld = false;
+    padSqueezeHeld = false;
+    if (guardEmitted) {
+      guardEmitted = false;
+      onGuardChange?.(false, source);
     }
   }
 
@@ -645,6 +723,7 @@ export function createSpatialInputBridge({
       gazeDwellMs: isGlasses ? 2000 : 0,
       trackpad: isGlasses,
       trackpadSteering: isGlasses,
+      controllerRay: false,
       rearCamera: !isGlasses,
     };
   }
@@ -663,6 +742,9 @@ export function createSpatialInputBridge({
         handStreamHealthy: handGestureCount > 0,
         handActive: nowMs() - lastHandActiveAt < 900,
         handedness: 'right',
+        palmGuard: palmGuardHeld,
+        squeezeActive: palmGuardHeld || padSqueezeHeld,
+        ultChargeProgress,
         trackpadActive: moveState.active,
         moveX: moveState.x,
         moveY: moveState.y,
@@ -670,6 +752,7 @@ export function createSpatialInputBridge({
         strafe: moveState.strafe,
         gazeDwellMs: getCapabilities().gazeDwellMs ?? (isGlasses ? 2000 : 0),
         gazeTargetId: reticleTargetId,
+        guideOpen,
       }
     );
   }
@@ -694,15 +777,99 @@ export function createSpatialInputBridge({
     return true;
   }
 
-  function triggerInstantParryWindow(source = 'instant-parry', durationMs = 950) {
+  function fireDodgeDedup(direction, source = 'trackpad-dodge') {
+    const dir = direction === 'left' || direction === -1 ? 'left' : 'right';
+    const t = nowMs();
+    // Deduplicate simultaneous host.onDodge + host.onTrackpadGesture('swipe-left'|'swipe-right') dispatch (~0-5ms apart),
+    // while allowing distinct consecutive user flicks (>= 70ms apart):
+    if (dir === lastDodgeDir && t - lastDodgeAt < 65) {
+      return false;
+    }
+    lastDodgeAt = t;
+    lastDodgeDir = dir;
+    dodgeCount++;
+    lastGestureSummary = `${source}:${dir}`;
+    onDodge?.({ direction: dir, dirSign: dir === 'left' ? -1 : 1, source });
+    return true;
+  }
+
+  function triggerInstantParryWindow(source = 'instant-parry', durationMs = 850) {
     if (holdReleaseTimer) window.clearTimeout(holdReleaseTimer);
+    guardEmitted = true;
     onGuardChange?.(true, source);
     holdReleaseTimer = window.setTimeout(() => {
       holdReleaseTimer = null;
-      if (!squeezeHeld) {
+      if (!palmGuardHeld && !padSqueezeHeld) {
+        guardEmitted = false;
         onGuardChange?.(false, `${source}-end`);
       }
     }, durationMs);
+  }
+
+  function setUltChargeState(progress, { active = false, canceled = false, completed = false, source = 'hand-fist' } = {}) {
+    ultChargeProgress = active ? T.MathUtils.clamp(Number(progress) || 0, 0, 1) : 0;
+    onUltCharge?.({
+      progress: ultChargeProgress,
+      active: Boolean(active && ultChargeProgress > 0),
+      canceled: Boolean(canceled),
+      completed: Boolean(completed),
+      source,
+    });
+  }
+
+  function handleGuideStateChange(ev) {
+    const nextOpen = Boolean(ev?.open);
+    const reason = ev?.reason || (nextOpen ? 'open' : 'dismiss');
+    guideOpen = nextOpen;
+    onGuideChange?.({ open: nextOpen, reason });
+  }
+
+  function showInteractionGuide(opts = {}) {
+    tryBindHost();
+    const mergedOpts = {
+      title: '鬼灭之刃 · AR 空间操作说明 v2.0',
+      subtitle: '右手隔空手势 + 全时手机盲操板协同 · 全程免晃动手机/Beam Pro',
+      skipLabel: '跳过说明 →',
+      skipOnTap: true,
+      stereo: isGlasses,
+      domInGlasses: !isGlasses,
+      items: V2_INTERACTION_GUIDE_ITEMS,
+      ...opts,
+    };
+    guideOpen = true;
+    if (typeof window.MetaTourWebAR?.showInteractionGuide === 'function') {
+      try {
+        window.MetaTourWebAR.showInteractionGuide(mergedOpts);
+        guideOpen = Boolean(window.MetaTourWebAR.isInteractionGuideOpen?.() ?? true);
+        return true;
+      } catch {}
+    }
+    onGuideChange?.({ open: true, reason: isGlasses ? 'open-3d-local' : 'open-local' });
+    return true;
+  }
+
+  function dismissInteractionGuide(reason = 'skip-button') {
+    const wasOpen = guideOpen || Boolean(window.MetaTourWebAR?.isInteractionGuideOpen?.());
+    guideOpen = false;
+    if (typeof window.MetaTourWebAR?.dismissInteractionGuide === 'function') {
+      try {
+        const closedByHost = window.MetaTourWebAR.dismissInteractionGuide(reason);
+        if (closedByHost) return true;
+      } catch {}
+    }
+    if (wasOpen) {
+      onGuideChange?.({ open: false, reason });
+    }
+    return wasOpen;
+  }
+
+  function isGuideOpen() {
+    if (typeof window.MetaTourWebAR?.isInteractionGuideOpen === 'function') {
+      try {
+        return Boolean(window.MetaTourWebAR.isInteractionGuideOpen());
+      } catch {}
+    }
+    return guideOpen;
   }
 
   function handleHandGesture(ev) {
@@ -712,66 +879,110 @@ export function createSpatialInputBridge({
     lastHandActiveAt = nowMs();
     const type = ev.type;
     const direction = ev.direction || 'right';
-    const clockwise = ev.clockwise !== false && ev.direction !== 'ccw';
-    lastGestureSummary = `hand:${type}${ev.direction ? `(${ev.direction})` : ''}`;
+    const clockwise = ev.clockwise !== false && ev.direction !== 'ccw' && ev.direction !== 'rlr';
+    if (type !== 'fist-charge') {
+      lastGestureSummary = `hand:${type}${ev.direction ? `(${ev.direction})` : ''}`;
+    }
+
+    if (isGuideOpen() && type === 'pinch') {
+      dismissInteractionGuide('pinch');
+      return;
+    }
 
     switch (type) {
       case 'slash':
+        setUltChargeState(0, { active: false, source: 'hand-slash' });
         onSlash?.({ direction, speed: Number(ev.speed) || 0, source: 'hand-slash' });
         break;
+      case 'wave-combo':
       case 'circle':
-        onWaterWheel?.({ clockwise, source: 'hand-circle' });
+        setUltChargeState(0, { active: false, source: `hand-${type}` });
+        onWaterWheel?.({
+          clockwise,
+          direction: ev.direction || (clockwise ? 'lrl' : 'rlr'),
+          source: type === 'wave-combo' ? 'hand-wave-combo' : 'hand-circle',
+        });
         break;
       case 'thrust':
-        onThrust?.({ source: 'hand-thrust' });
+        setUltChargeState(0, { active: false, source: 'hand-thrust' });
+        onThrust?.({
+          direction: ev.direction && ev.direction !== 'forward' ? ev.direction : null,
+          rawDirection: ev.direction || 'forward',
+          speed: Number(ev.speed) || 0,
+          source: 'hand-thrust',
+        });
+        break;
+      case 'palm-hold':
+        setUltChargeState(0, { active: false, source: 'hand-palm-hold' });
+        palmGuardHeld = true;
+        syncGuardOutput('hand-palm-hold');
+        break;
+      case 'palm-release':
+        palmGuardHeld = false;
+        syncGuardOutput('hand-palm-release');
+        break;
+      case 'fist-charge': {
+        const rawPct = ev.chargeProgress !== undefined ? Number(ev.chargeProgress) : Number(ev.speed);
+        const pct = T.MathUtils.clamp(Number.isFinite(rawPct) ? rawPct : 0, 0, 1);
+        lastGestureSummary = `hand:fist-charge(${Math.round(pct * 100)}%)`;
+        setUltChargeState(pct, { active: pct > 0, source: 'hand-fist-charge' });
+        break;
+      }
+      case 'fist-charge-cancel':
+      case 'fist-release':
+        setUltChargeState(0, { active: false, canceled: true, source: `hand-${type}` });
+        if (palmGuardHeld && type === 'fist-release') {
+          palmGuardHeld = false;
+          syncGuardOutput('hand-fist-release');
+        }
+        break;
+      case 'fist-ult':
+        setUltChargeState(0, { active: false, completed: true, source: 'hand-fist-ult' });
+        onUltimate?.({ forceMusou: true, source: 'hand-fist-ult' });
         break;
       case 'fist-hold':
-        if (holdReleaseTimer) {
-          window.clearTimeout(holdReleaseTimer);
-          holdReleaseTimer = null;
-        }
-        onGuardChange?.(true, 'hand-fist-hold');
-        break;
-      case 'fist-release':
-        onGuardChange?.(false, 'hand-fist-release');
+        // Legacy v1.5.2 compatibility fallback only
+        palmGuardHeld = true;
+        syncGuardOutput('hand-fist-hold-legacy');
         break;
       case 'open-palm':
-        onUltimate?.({ source: 'hand-open-palm' });
+        // Legacy v1.5.2 compatibility fallback only
+        onUltimate?.({ forceMusou: false, source: 'hand-open-palm-legacy' });
         break;
       case 'pinch':
-        onPinch?.({ source: 'hand-pinch', allowFallbackPrimary: false });
+        onPinch?.({ source: 'hand-pinch', allowFallbackPrimary: true });
         break;
       default:
         break;
     }
   }
 
+  function handleHostSqueezeChange(ev) {
+    if (!ev || typeof ev !== 'object') return;
+    const nextDown = Boolean(ev.active);
+    const src = typeof ev.source === 'string' ? ev.source : 'trackpad';
+    if (src === 'hand') {
+      palmGuardHeld = nextDown;
+      syncGuardOutput(nextDown ? 'hand-squeeze-hold' : 'hand-squeeze-release');
+    } else {
+      padSqueezeHeld = nextDown;
+      syncGuardOutput(nextDown ? 'trackpad-two-finger-hold' : 'trackpad-two-finger-release');
+    }
+  }
+
   function setSqueezeHeld(down, source = 'xr-squeeze') {
     const nextDown = Boolean(down);
-    if (nextDown) {
-      squeezeHeld = true;
-      squeezeDownAt = nowMs();
-      if (holdReleaseTimer) {
-        window.clearTimeout(holdReleaseTimer);
-        holdReleaseTimer = null;
-      }
-      onGuardChange?.(true, source);
-      return;
-    }
-    const heldMs = squeezeDownAt > 0 ? nowMs() - squeezeDownAt : 9999;
-    squeezeHeld = false;
-    squeezeDownAt = 0;
     const isSystemReset = source === 'enter-battle-reset' || source === 'xr-session-end';
-    if (!isSystemReset && !isMenuPhase() && heldMs < 260) {
-      // Quick 2-finger tap (or legacy v1.5.0 0ms squeeze pulse) -> 0.95s Instant Water-Mirror Parry Window!
-      triggerInstantParryWindow('two-finger-parry', 950);
+    if (isSystemReset && !nextDown) {
+      clearAllGuard(source);
       return;
     }
-    if (holdReleaseTimer) {
-      window.clearTimeout(holdReleaseTimer);
-      holdReleaseTimer = null;
+    if (source.includes('hand')) {
+      palmGuardHeld = nextDown;
+    } else {
+      padSqueezeHeld = nextDown;
     }
-    onGuardChange?.(false, source);
+    syncGuardOutput(source);
   }
 
   function getGazeDwellMs() {
@@ -786,12 +997,25 @@ export function createSpatialInputBridge({
     return isGlasses ? 2000 : 0;
   }
 
+  function handleDodgeEvent(ev) {
+    if (!ev || typeof ev !== 'object') return;
+    tryBindHost();
+    if (isGuideOpen() || isMenuPhase()) return;
+    const dir = ev.direction === 'left' || ev.action === 'dodge-left' || ev.type === 'swipe-left' ? 'left' : 'right';
+    fireDodgeDedup(dir, 'host-dodge');
+  }
+
   function handleTrackpadGesture(ev) {
     if (!ev || typeof ev.type !== 'string') return;
     tryBindHost();
     trackpadGestureCount++;
     const type = ev.type;
     lastGestureSummary = `trackpad:${type}`;
+
+    if (isGuideOpen() && type === 'tap') {
+      dismissInteractionGuide('tap');
+      return;
+    }
 
     if (isMenuPhase()) {
       if (type === 'tap' || type === 'swipe-up') {
@@ -800,70 +1024,27 @@ export function createSpatialInputBridge({
       return;
     }
 
-    // v1.5.2 Dynamic Coexistence Rule (eliminates GetHandData error:1 deadlock!):
-    // - 2-finger / hold guard is ALWAYS honored regardless of hand state.
-    // - When the right hand is actively tracked in FOV (isHandActivelyTracked() === true),
-    //   air gestures lead combat while the phone screen acts purely as the left-hand steering wheel
-    //   (suppressing swipe/tap crosstalk while steering).
-    // - Whenever the right hand is lowered out of FOV or hand stream is inactive, full blind-pad
-    //   combat skills (tap / swipe-up / swipe-left / swipe-right / swipe-down / hold) engage seamlessly!
+    // v2.0 All-Time Blind Trackpad Rule:
+    // Blind-pad inputs (tap = normal attack, swipe-left/right = dodge, 2-finger hold = guard,
+    // swipe-up = Water Wheel fallback, swipe-down = Ultimate fallback) remain 100% active at ALL times,
+    // NEVER blocked when S24 right-hand tracking (handActive === true) is active!
     if (type === 'hold') {
-      if (!squeezeHeld) {
-        triggerInstantParryWindow('trackpad-hold', 1100);
+      if (!palmGuardHeld && !padSqueezeHeld) {
+        triggerInstantParryWindow('trackpad-hold', 950);
       }
       return;
     }
-
-    if (isHandActivelyTracked()) {
-      return;
-    }
-
-    // Axial Cone Filter (|tan| <= 0.58, ~±30 deg) + Rapid Double-Tap Thrust (<= 255ms):
-    // Eliminates oblique 40..50 deg thumb-flick crosstalk between Water Wheel (swipe-up) & Thrust (swipe-left/right)!
-    const OBLIQUE_TAN = 0.58;
-    const hasVector = ev.dx !== undefined || ev.dy !== undefined;
-    const ax = Math.abs(Number(ev.dx) || 0);
-    const ay = Math.abs(Number(ev.dy) || 0);
-    const vectorValid = hasVector && ax + ay > 0.015;
 
     if (type === 'tap') {
-      const eventTs = Number.isFinite(Number(ev.timestampMs)) ? Number(ev.timestampMs) : nowMs();
-      if (eventTs - lastTapAt >= 45 && eventTs - lastTapAt <= 255) {
-        lastTapAt = -10000;
-        lastGestureSummary = 'trackpad:double-tap->thrust';
-        onThrust?.({ direction: null, source: 'trackpad-double-tap' });
-        return;
-      }
-      lastTapAt = eventTs;
       onSlash?.({ direction: 'right', speed: 1, source: 'trackpad-tap' });
+    } else if (type === 'swipe-left' || ev.action === 'dodge-left') {
+      fireDodgeDedup('left', 'trackpad-swipe-left');
+    } else if (type === 'swipe-right' || ev.action === 'dodge-right') {
+      fireDodgeDedup('right', 'trackpad-swipe-right');
     } else if (type === 'swipe-up') {
-      lastTapAt = -10000;
-      if (vectorValid && ax > OBLIQUE_TAN * ay) {
-        lastGestureSummary = 'trackpad:oblique-up->slash';
-        onSlash?.({ direction: 'up', speed: 1.15, source: 'trackpad-oblique-slash' });
-        return;
-      }
-      onWaterWheel?.({ clockwise: true, source: 'trackpad-swipe-up' });
-    } else if (type === 'swipe-left' || type === 'swipe-right') {
-      lastTapAt = -10000;
-      const latDir = type === 'swipe-left' ? 'left' : 'right';
-      if (vectorValid && ay > OBLIQUE_TAN * ax) {
-        lastGestureSummary = `trackpad:oblique-${latDir}->slash`;
-        onSlash?.({ direction: latDir, speed: 1.15, source: 'trackpad-oblique-slash' });
-        return;
-      }
-      onThrust?.({
-        direction: latDir,
-        source: `trackpad-${type}`,
-      });
+      onWaterWheel?.({ clockwise: true, direction: 'lrl', source: 'trackpad-swipe-up' });
     } else if (type === 'swipe-down') {
-      lastTapAt = -10000;
-      if (vectorValid && ax > 0.65 * ay) {
-        lastGestureSummary = 'trackpad:oblique-down->slash';
-        onSlash?.({ direction: 'down', speed: 1.15, source: 'trackpad-oblique-slash' });
-        return;
-      }
-      onUltimate?.({ source: 'trackpad-swipe-down' });
+      onUltimate?.({ forceMusou: false, source: 'trackpad-swipe-down' });
     }
   }
 
@@ -907,6 +1088,20 @@ export function createSpatialInputBridge({
     }
   }
 
+  let lastResetEventAt = -10000;
+  function handleHostViewReset() {
+    const t = nowMs();
+    if (t - lastResetEventAt < 120) return;
+    lastResetEventAt = t;
+    moveState.active = false;
+    moveState.x = 0;
+    moveState.y = 0;
+    moveState.forward = 0;
+    moveState.strafe = 0;
+    onMoveAxes?.({ x: 0, y: 0, forward: 0, strafe: 0, active: false });
+    onViewReset?.();
+  }
+
   function tryBindHost() {
     const host = window.MetaTourWebAR;
     if (!host || host === boundHost) return Boolean(boundHost);
@@ -921,6 +1116,12 @@ export function createSpatialInputBridge({
       host.onHandGesture?.(ev => handleHandGesture(ev));
     } catch {}
     try {
+      host.onSqueezeChange?.(ev => handleHostSqueezeChange(ev));
+    } catch {}
+    try {
+      host.onDodge?.(ev => handleDodgeEvent(ev));
+    } catch {}
+    try {
       host.onTrackpadGesture?.(ev => handleTrackpadGesture(ev));
     } catch {}
     try {
@@ -932,24 +1133,17 @@ export function createSpatialInputBridge({
     try {
       host.onGazeSelect?.(ev => handleGazeSelect(ev));
     } catch {}
+    try {
+      host.onInteractionGuideChange?.(ev => handleGuideStateChange(ev));
+    } catch {}
+    try {
+      host.onViewReset?.(() => handleHostViewReset());
+    } catch {}
     return true;
   }
 
   tryBindHost();
 
-  let lastResetEventAt = -10000;
-  function handleHostViewReset() {
-    const t = nowMs();
-    if (t - lastResetEventAt < 120) return;
-    lastResetEventAt = t;
-    moveState.active = false;
-    moveState.x = 0;
-    moveState.y = 0;
-    moveState.forward = 0;
-    moveState.strafe = 0;
-    onMoveAxes?.({ x: 0, y: 0, forward: 0, strafe: 0, active: false });
-    onViewReset?.();
-  }
   window.addEventListener('metatour-view-reset', handleHostViewReset);
   window.addEventListener('xreal-view-reset', handleHostViewReset);
 
@@ -964,6 +1158,14 @@ export function createSpatialInputBridge({
   window.addEventListener('metatour-hand-gesture', e => {
     if (boundHost?.onHandGesture) return;
     handleHandGesture(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-squeeze-change', e => {
+    if (boundHost?.onSqueezeChange) return;
+    handleHostSqueezeChange(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-dodge', e => {
+    if (boundHost?.onDodge) return;
+    handleDodgeEvent(e?.detail ?? e);
   });
   window.addEventListener('metatour-trackpad-gesture', e => {
     if (boundHost?.onTrackpadGesture) return;
@@ -980,6 +1182,10 @@ export function createSpatialInputBridge({
   window.addEventListener('metatour-gaze-select', e => {
     if (boundHost?.onGazeSelect) return;
     handleGazeSelect(e?.detail ?? e);
+  });
+  window.addEventListener('metatour-guide-change', e => {
+    if (boundHost?.onInteractionGuideChange) return;
+    handleGuideStateChange(e?.detail ?? e);
   });
 
   function setReticleTarget(idOrNull) {
@@ -1011,6 +1217,9 @@ export function createSpatialInputBridge({
     getGazeDwellMs,
     setSqueezeHeld,
     setReticleTarget,
+    showInteractionGuide,
+    dismissInteractionGuide,
+    isGuideOpen,
     hasHostGazeDwell: () => typeof window.MetaTourWebAR?.setReticleTarget === 'function',
     lastMenuConfirmAgeMs: () => nowMs() - lastMenuSelectAt,
     markMenuConfirmed(targetId, source = 'manual') {
@@ -1018,21 +1227,28 @@ export function createSpatialInputBridge({
     },
     simulateHandGesture: ev => handleHandGesture(ev),
     simulateTrackpadGesture: ev => handleTrackpadGesture(ev),
+    simulateDodge: direction => fireDodgeDedup(direction, 'simulated-dodge'),
     simulateTrackpadMove: ev => handleTrackpadMove(ev),
     simulateGazeSelect: targetId => fireMenuSelectDedup(targetId, 'simulated-gaze'),
     stats: () => ({
+      version: window.MetaTourWebAR?.version || '1.5.4-adapter',
       boundHost: Boolean(boundHost),
       capabilities: getCapabilities(),
       inputState: getInputState(),
       handActivelyTracked: isHandActivelyTracked(),
       gazeDwellMs: getGazeDwellMs(),
-      squeezeHeld,
+      palmGuardHeld,
+      padSqueezeHeld,
+      squeezeHeld: Boolean(palmGuardHeld || padSqueezeHeld),
+      ultChargeProgress: Number(ultChargeProgress.toFixed(3)),
+      guideOpen: isGuideOpen(),
       reticleTargetId,
       lastProgressTargetId,
       lastProgress: Number(lastProgress.toFixed(3)),
       lastGestureSummary,
       handGestureCount,
       trackpadGestureCount,
+      dodgeCount,
       moveEventCount,
       gazeSelectCount,
       moveState: { ...moveState },

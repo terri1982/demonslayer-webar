@@ -98,11 +98,14 @@ dirLight.position.set(1.8, 4.6, 2.6);
 dirLight.castShadow = false;
 worldRoot.add(dirLight);
 
+const startupParams = new URLSearchParams(window.location.search);
+const skipStartupGuide = startupParams.get('skipGuide') === '1';
+
 let ally = null;
 let assetsReady = false;
 let pendingGlassesStart = false;
-// In AR Glasses mode, Phase A opens on the 3D Spatial Welcome Plaque + Dual 3D Menu Buttons (2.14m ahead, 0% 2D DOM)!
-let mode = 'welcome';
+// v2.0 Startup: In AR Glasses mode, Phase A opens on the 3D Spatial Interaction Guide Plaque + Gold [跳过说明 · 拔刀开战 →] button!
+let mode = isGlasses && !skipStartupGuide ? 'guide' : 'welcome';
 let difficulty = 'normal';
 let cameraActive = false;
 let battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
@@ -132,6 +135,7 @@ window.addEventListener('resize', syncViewportSize);
 
 // Spatial subsystems (all under worldRoot in scene):
 const poseCtrl = createPoseController({
+  isGlasses,
   onExternalRecenter() {
     if (!isGlasses && mode === 'battle') {
       showMessage('已响应容器「回正」校准正前方视角', 1.6);
@@ -186,12 +190,14 @@ let dragState = null;
 let xrBaselineHeadX = null;
 let battleEnteredAtMs = -10000;
 
-// Sticky Gaze Lock & 3D Spatial Menu Dwell state:
+// Sticky Gaze Lock & 3D Spatial Menu Dwell + 3s Fist Charge state:
 let lockedEnemyId = null;
 let gazeOnLocked = false;
 let hoveredMenuId = null;
 let menuProgress = 0;
 let localMenuDwellSec = 0;
+let ultChargeProgress = 0;
+let ultChargeUpdatedAtMs = -10000;
 let gestureHint = '';
 let gestureHintUntil = 0;
 let xrSessionRef = null;
@@ -357,61 +363,104 @@ function handleSpatialMenuAction(targetId) {
     audio.event({ type: 'perfect' });
     return true;
   }
+  if (targetId === 'btn-skip-guide') {
+    spatialInput.dismissInteractionGuide('gaze-dwell-skip');
+    return enterBattleOrQueue();
+  }
   return enterBattleOrQueue();
 }
 
-// v1.5.0 Decoupled Spatial Input Bridge (Air Gestures + Blind Trackpad + Floating Steering + Dynamic Gaze Dwell):
+// v1.5.4 Spatial Interaction v2.0 Bridge (All-Time Blind Pad + S24 Air Gestures + Onboarding Guide + Zero Phone Shake):
 const spatialInput = createSpatialInputBridge({
   isGlasses,
-  isMenuPhase: () => mode === 'welcome' || mode === 'result',
+  isMenuPhase: () => mode === 'guide' || mode === 'welcome' || mode === 'result',
   onSlash({ direction: dir, source }) {
     if (mode !== 'battle') return;
     audio.unlock();
     const labelMap = { left: '左挥斩', right: '右挥斩', up: '上挑斩', down: '下劈斩' };
-    setGestureHint(`【${source.startsWith('hand') ? '右手手势' : '盲滑触控'}】${labelMap[dir] || '拔刀普攻'}`);
+    setGestureHint(`【${source.startsWith('hand') ? '右手手势' : '全时盲操'}】${labelMap[dir] || '拔刀普攻'}`);
     triggerAttack('light', { slashDir: dir || 'right' });
     flushBattleEvents();
   },
-  onWaterWheel({ clockwise }) {
+  onDodge({ direction: dir, dirSign }) {
     if (mode !== 'battle') return;
     audio.unlock();
-    setGestureHint(`【贰之型·水车】${clockwise ? '纵向巨轮三连旋斩' : '逆转水轮三连旋斩'}`);
+    const moved = battle.dodge(dirSign ?? (dir === 'left' ? -1 : 1));
+    setGestureHint(
+      `【全时盲操】${dir === 'left' ? '快速左滑 · 左闪回避' : '快速右滑 · 右闪回避'}${moved ? '' : '（调息中）'}`,
+      1.5,
+    );
+    flushBattleEvents();
+  },
+  onWaterWheel({ clockwise, direction: waveDir }) {
+    if (mode !== 'battle') return;
+    audio.unlock();
+    const waveLabel = waveDir === 'rlr' ? '右-左-右连挥水轮' : '左-右-左连挥水轮';
+    setGestureHint(`【贰之型·水车】${waveLabel}三连群攻`);
     battle.castWaterWheel(getCombatTargetId(), clockwise);
     flushBattleEvents();
   },
-  onThrust({ direction: latDir, source }) {
+  onThrust({ direction: latDir }) {
     if (mode !== 'battle') return;
     audio.unlock();
-    setGestureHint(
-      source === 'trackpad-double-tap'
-        ? '【柒之型·雫波纹击刺】双击直线水矛贯通'
-        : '【柒之型·雫波纹击刺】直线水矛贯通破招',
-    );
+    setGestureHint('【柒之型·雫波纹击刺】向前出拳/指直线水矛破招');
     battle.castThrust(getCombatTargetId(), latDir || null);
     flushBattleEvents();
   },
-  onGuardChange(active) {
+  onGuardChange(active, source = '') {
     if (mode !== 'battle') {
       battle.setGuard(false);
       return;
     }
     audio.unlock();
-    if (active) setGestureHint('【流流舞·守势】持续架刀弹反中', 2.4);
+    if (active) {
+      setGestureHint(
+        source.includes('palm') || source.includes('hand')
+          ? '【流流舞·水镜格挡】右手竖掌✋持续架盾弹反中'
+          : '【流流舞·水镜格挡】盲操双指持续架盾弹反中',
+        2.4,
+      );
+    }
     battle.setGuard(active);
     flushBattleEvents();
   },
-  onUltimate() {
+  onUltCharge({ progress, active, canceled, completed }) {
+    if (mode !== 'battle') {
+      ultChargeProgress = 0;
+      return;
+    }
+    if (active && progress > 0) {
+      ultChargeProgress = progress;
+      ultChargeUpdatedAtMs = performance.now();
+      const pct = Math.round(progress * 100);
+      if (pct >= 15) {
+        setGestureHint(`【握拳蓄力 ${pct}%】保持 3 秒释放全集中水车合击大招`, 0.9);
+      }
+    } else {
+      ultChargeProgress = 0;
+      if (canceled) {
+        setGestureHint('【蓄力取消】握拳未满 3 秒，已收势待发', 1.1);
+      } else if (completed) {
+        setGestureHint('【全集中奥义】握拳 3 秒蓄满 · 水之呼吸·水车合击！', 2.8);
+      }
+    }
+  },
+  onUltimate({ forceMusou = false } = {}) {
     if (mode !== 'battle') return;
     audio.unlock();
-    setGestureHint('【全集中奥义】水之呼吸·水车合击！', 2.6);
-    battle.castUltimate(getCombatTargetId());
+    ultChargeProgress = 0;
+    setGestureHint('【全集中奥义】水之呼吸·水车合击！', 2.8);
+    battle.castUltimate(getCombatTargetId(), { forceMusou });
     flushBattleEvents();
   },
   onPinch({ source, allowFallbackPrimary = false }) {
     audio.unlock();
     handRayPinchingUntil = performance.now() + 240;
-    // Strict v1.5.0 rule: pinch confirms Phase A spatial menu buttons ONLY;
-    // in Phase B battle, normal slashes are handled by 4-way 'slash' (or 3DoF 'tap'), avoiding fist/palm transition misfires.
+    if (mode === 'guide') {
+      const targetMenu = hoveredMenuId || 'btn-skip-guide';
+      spatialInput.markMenuConfirmed(targetMenu, source);
+      return;
+    }
     if (mode === 'welcome' || mode === 'result') {
       const targetMenu =
         hoveredMenuId ||
@@ -436,6 +485,11 @@ const spatialInput = createSpatialInputBridge({
   onMenuSelect({ targetId }) {
     handleSpatialMenuAction(targetId || worldPlaque.getActiveMenuId(mode) || 'btn-start-battle');
   },
+  onGuideChange({ open, reason }) {
+    if (!open && isGlasses && mode === 'guide' && reason !== 'reopen') {
+      enterBattleOrQueue();
+    }
+  },
   onViewReset() {
     battle.resetFootwork();
     xrBaselineHeadX = null;
@@ -445,6 +499,22 @@ const spatialInput = createSpatialInputBridge({
     }
   },
 });
+
+function openStartupInteractionGuide(force = false) {
+  if (!force && skipStartupGuide) return false;
+  if (isGlasses) {
+    mode = 'guide';
+    return spatialInput.showInteractionGuide({
+      stereo: true,
+      domInGlasses: false,
+    });
+  }
+  return spatialInput.showInteractionGuide({
+    stereo: false,
+    domInGlasses: true,
+  });
+}
+openStartupInteractionGuide(false);
 
 function findEnemyByMeshOrCone(rayOrigin, rayDir) {
   const aliveActors = enemyView.getAliveActors();
@@ -493,7 +563,11 @@ function updateStickyGazeAndMenu(activeCam, dt, handRayInfo = null) {
     const hostHandlesDwell = spatialInput.setReticleTarget(hoveredMenuId);
     const dwellMs = spatialInput.getGazeDwellMs();
     if (!hostHandlesDwell) {
-      const buttonReady = hoveredMenuId === 'btn-toggle-difficulty' || hoveredMenuId === 'btn-back-welcome' || assetsReady;
+      const buttonReady =
+        hoveredMenuId === 'btn-skip-guide' ||
+        hoveredMenuId === 'btn-toggle-difficulty' ||
+        hoveredMenuId === 'btn-back-welcome' ||
+        assetsReady;
       if (hoveredMenuId && buttonReady && dwellMs > 0) {
         localMenuDwellSec += dt;
         menuProgress = Math.min(1, (localMenuDwellSec * 1000) / dwellMs);
@@ -686,6 +760,7 @@ function flushBattleEvents() {
 }
 
 function enterBattle() {
+  spatialInput.dismissInteractionGuide('enter-battle');
   battle = createBattle({ allySide: -1, bossAt: BOSS_AT, difficulty, isGlasses });
   effects.reset();
   spatialVfx.reset();
@@ -699,6 +774,7 @@ function enterBattle() {
   hoveredMenuId = null;
   menuProgress = 0;
   localMenuDwellSec = 0;
+  ultChargeProgress = 0;
   spatialInput.setSqueezeHeld(false, 'enter-battle-reset');
   spatialInput.setReticleTarget(null);
   syncViewportSize();
@@ -754,7 +830,7 @@ async function startGlassesWebXRSession() {
       if (src?.hand) {
         handRayPinchingUntil = performance.now() + 240;
       }
-      if (mode === 'welcome' || mode === 'result') {
+      if (mode === 'guide' || mode === 'welcome' || mode === 'result') {
         const targetMenu =
           hoveredMenuId ||
           (src?.targetRayMode !== 'gaze' ? worldPlaque.getActiveMenuId(mode) || 'btn-start-battle' : null);
@@ -764,7 +840,7 @@ async function startGlassesWebXRSession() {
         return;
       }
       if (mode === 'battle') {
-        // Gaze is strictly Sticky Lock only; Hand uses 6 air gestures; MetaTour 3DoF pad uses onTrackpadGesture('tap').
+        // Gaze is strictly Sticky Lock only; Hand uses v2.0 air gestures; MetaTour blind-pad uses onTrackpadGesture('tap').
         // Only fire fallback slash on generic non-MetaTour WebXR controllers!
         if (src?.targetRayMode === 'gaze' || src?.hand || window.MetaTourWebAR) return;
         triggerAttack('light', { slashDir: 'right' });
@@ -797,7 +873,7 @@ if (isGlasses) {
       audio.unlock();
       if (!diagnostics.xrSessionActive) startGlassesWebXRSession();
       if (window.MetaTourWebAR) return; // In native MetaTour container, ControlPadView / Hand / Gaze handle input
-      if (mode === 'welcome' || mode === 'result') {
+      if (mode === 'guide' || mode === 'welcome' || mode === 'result') {
         spatialInput.markMenuConfirmed(worldPlaque.getActiveMenuId(mode) || 'btn-start-battle', 'pointer');
       } else if (mode === 'battle') {
         triggerAttack('light', { slashDir: 'right' });
@@ -818,8 +894,14 @@ if (!isGlasses) {
   syncHandheldContainerHint();
   window.setTimeout(syncHandheldContainerHint, 250);
 
+  $('#btn-open-guide')?.addEventListener('click', () => {
+    audio.unlock();
+    openStartupInteractionGuide(true);
+  });
+
   $('#btn-camera-ar').addEventListener('click', async () => {
     audio.unlock();
+    spatialInput.dismissInteractionGuide('start-camera-ar');
     $('#btn-camera-ar').disabled = true;
     const sensorTask = poseCtrl.requestSensors();
     const camResult = await rearCamera.start();
@@ -842,6 +924,7 @@ if (!isGlasses) {
 
   $('#btn-touch-preview').addEventListener('click', () => {
     audio.unlock();
+    spatialInput.dismissInteractionGuide('start-touch-preview');
     rearCamera.stop();
     syncBackdropVisibility(false);
     poseCtrl.recenter();
@@ -1286,6 +1369,10 @@ renderer.setAnimationLoop((now, xrFrame) => {
     dt,
   });
 
+  if (ultChargeProgress > 0 && now - ultChargeUpdatedAtMs > 850) {
+    ultChargeProgress = 0;
+  }
+
   courtyard.update(now * 0.001, battle.status === 'victory' ? 1 : 0);
   warnings.update(mode === 'battle' ? battle : { hazards: [], time: 0, player: battle.player });
   enemyView.update(mode === 'battle' || mode === 'result' ? battle : { enemies: [], time: 0 });
@@ -1302,6 +1389,7 @@ renderer.setAnimationLoop((now, xrFrame) => {
     gazeOnTarget: gazeOnLocked,
     hoveredMenuId,
     menuProgress,
+    ultChargeProgress,
     gazeDwellMs: spatialInput.getGazeDwellMs(),
     deviceModel: caps.deviceModel || '',
     handTracking: Boolean(inputState?.handSupported ?? caps.handTracking),
@@ -1350,14 +1438,17 @@ Promise.all([
     }
   });
 
-// Read-only diagnostics, v1.5.0 Spatial Input test hooks & EasyAR Mega spatial anchor hook:
+// Read-only diagnostics, v1.5.4 Spatial Interaction v2.0 test hooks & EasyAR Mega spatial anchor hook:
 window.__webar = {
   applyMegaPose: pose => megaBridge.applyMegaPose(pose),
   recenter: () => poseCtrl.recenter(),
   checkGlasses: () => glassesBridge.check(),
+  openGuide: () => openStartupInteractionGuide(true),
+  dismissGuide: reason => spatialInput.dismissInteractionGuide(reason || 'manual-skip'),
   spatialInput: {
     simulateHandGesture: ev => spatialInput.simulateHandGesture(ev),
     simulateTrackpadGesture: ev => spatialInput.simulateTrackpadGesture(ev),
+    simulateDodge: dir => spatialInput.simulateDodge(dir),
     simulateTrackpadMove: ev => spatialInput.simulateTrackpadMove(ev),
     simulateGazeSelect: id => spatialInput.simulateGazeSelect(id),
     simulateSqueezeHeld: (down, source) => spatialInput.setSqueezeHeld(down, source),
@@ -1370,6 +1461,7 @@ window.__webar = {
     threeRevision: T.REVISION,
     isGlasses,
     mode,
+    guideOpen: spatialInput.isGuideOpen() || (isGlasses && mode === 'guide'),
     difficulty,
     assetsReady,
     cameraActive,
@@ -1385,6 +1477,7 @@ window.__webar = {
     gazeOnLocked,
     hoveredMenuId,
     menuProgress: Number(menuProgress.toFixed(3)),
+    ultChargeProgress: Number(ultChargeProgress.toFixed(3)),
     worldPlaque: worldPlaque.stats(),
     handRay: handRay.stats(),
     slashArcVisible: slashArc.group.visible,
