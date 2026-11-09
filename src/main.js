@@ -190,7 +190,13 @@ let dragState = null;
 let xrBaselineHeadX = null;
 let battleEnteredAtMs = -10000;
 
-// Sticky Gaze Lock & 3D Spatial Menu Dwell + 3s Fist Charge state:
+// Sticky Gaze Lock & 3D Spatial Menu Dwell + 2s Fist Charge + Interactive Animated Tutorial state:
+const GUIDE_REQUIRED_SEC = 8.0;
+let guideWatchedSec = 0;
+let guideSkipArmedUntil = 0;
+let lastGuideTapAtMs = -10000;
+let userPresenceDetected = !isGlasses;
+let initialHeadQuat = null;
 let lockedEnemyId = null;
 let gazeOnLocked = false;
 let hoveredMenuId = null;
@@ -203,6 +209,14 @@ let gestureHintUntil = 0;
 let xrSessionRef = null;
 let handRayPinchingUntil = 0;
 let simulatedHandRay = null;
+
+function isGuideSkipArmed() {
+  return performance.now() < guideSkipArmedUntil;
+}
+
+function isGuideCompleted() {
+  return guideWatchedSec >= GUIDE_REQUIRED_SEC;
+}
 
 const direction = new T.Vector3();
 const camWorldPos = new T.Vector3();
@@ -364,7 +378,19 @@ function handleSpatialMenuAction(targetId) {
     return true;
   }
   if (targetId === 'btn-skip-guide') {
-    spatialInput.dismissInteractionGuide('gaze-dwell-skip');
+    const now = performance.now();
+    if (now - lastGuideTapAtMs < 140) return false;
+    lastGuideTapAtMs = now;
+    userPresenceDetected = true;
+    if (!isGuideCompleted() && !isGuideSkipArmed()) {
+      guideSkipArmedUntil = now + 6000;
+      localMenuDwellSec = 0;
+      menuProgress = 0;
+      audio.event({ type: 'perfect' });
+      return false;
+    }
+    guideSkipArmedUntil = 0;
+    spatialInput.dismissInteractionGuide(isGuideCompleted() ? 'guide-completed' : 'confirm-skip');
     return enterBattleOrQueue();
   }
   return enterBattleOrQueue();
@@ -434,14 +460,14 @@ const spatialInput = createSpatialInputBridge({
       ultChargeUpdatedAtMs = performance.now();
       const pct = Math.round(progress * 100);
       if (pct >= 15) {
-        setGestureHint(`【握拳蓄力 ${pct}%】保持 3 秒释放全集中水车合击大招`, 0.9);
+        setGestureHint(`【抬手握拳蓄力 ${pct}%】保持 2 秒释放全集中水车合击大招`, 0.9);
       }
     } else {
       ultChargeProgress = 0;
       if (canceled) {
-        setGestureHint('【蓄力取消】握拳未满 3 秒，已收势待发', 1.1);
+        setGestureHint('【蓄力取消】握拳未满 2 秒或手位过低，已收势待发', 1.1);
       } else if (completed) {
-        setGestureHint('【全集中奥义】握拳 3 秒蓄满 · 水之呼吸·水车合击！', 2.8);
+        setGestureHint('【全集中奥义】抬手握拳 2 秒蓄满 · 水之呼吸·水车合击！', 2.8);
       }
     }
   },
@@ -455,10 +481,14 @@ const spatialInput = createSpatialInputBridge({
   },
   onPinch({ source, allowFallbackPrimary = false }) {
     audio.unlock();
+    userPresenceDetected = true;
     handRayPinchingUntil = performance.now() + 240;
     if (mode === 'guide') {
-      const targetMenu = hoveredMenuId || 'btn-skip-guide';
-      spatialInput.markMenuConfirmed(targetMenu, source);
+      if (hoveredMenuId === 'btn-toggle-difficulty') {
+        spatialInput.markMenuConfirmed('btn-toggle-difficulty', source);
+      } else {
+        handleSpatialMenuAction('btn-skip-guide');
+      }
       return;
     }
     if (mode === 'welcome' || mode === 'result') {
@@ -502,16 +532,20 @@ const spatialInput = createSpatialInputBridge({
 
 function openStartupInteractionGuide(force = false) {
   if (!force && skipStartupGuide) return false;
+  guideWatchedSec = 0;
+  guideSkipArmedUntil = 0;
   if (isGlasses) {
     mode = 'guide';
     return spatialInput.showInteractionGuide({
       stereo: true,
       domInGlasses: false,
+      skipOnTap: false,
     });
   }
   return spatialInput.showInteractionGuide({
     stereo: false,
     domInGlasses: true,
+    skipOnTap: false,
   });
 }
 openStartupInteractionGuide(false);
@@ -560,11 +594,14 @@ function updateStickyGazeAndMenu(activeCam, dt, handRayInfo = null) {
       menuProgress = 0;
     }
     hoveredMenuId = nextHoverId;
-    const hostHandlesDwell = spatialInput.setReticleTarget(hoveredMenuId);
+    const allowSkipGuideDwell =
+      hoveredMenuId !== 'btn-skip-guide' || isGuideCompleted() || isGuideSkipArmed();
+    const effectiveReticleTarget = allowSkipGuideDwell ? hoveredMenuId : null;
+    const hostHandlesDwell = spatialInput.setReticleTarget(effectiveReticleTarget);
     const dwellMs = spatialInput.getGazeDwellMs();
     if (!hostHandlesDwell) {
       const buttonReady =
-        hoveredMenuId === 'btn-skip-guide' ||
+        (hoveredMenuId === 'btn-skip-guide' && allowSkipGuideDwell) ||
         hoveredMenuId === 'btn-toggle-difficulty' ||
         hoveredMenuId === 'btn-back-welcome' ||
         assetsReady;
@@ -581,7 +618,7 @@ function updateStickyGazeAndMenu(activeCam, dt, handRayInfo = null) {
         localMenuDwellSec = 0;
         menuProgress = 0;
       }
-    } else if (!hoveredMenuId || dwellMs <= 0) {
+    } else if (!effectiveReticleTarget || dwellMs <= 0) {
       menuProgress = 0;
     }
     return null;
@@ -1318,6 +1355,27 @@ renderer.setAnimationLoop((now, xrFrame) => {
 
   const handRayState = extractRightHandRay(xrFrame);
   spatialInput.noteExternalHandActive(handRayState.active);
+  if (!userPresenceDetected) {
+    const st = spatialInput.stats();
+    if (
+      handRayState.active ||
+      st.handActivelyTracked ||
+      st.trackpadGestureCount > 0 ||
+      st.moveEventCount > 0 ||
+      st.handGestureCount > 0
+    ) {
+      userPresenceDetected = true;
+    } else if (xrPresenting) {
+      if (!initialHeadQuat) {
+        initialHeadQuat = activeCamera.quaternion.clone();
+      } else if (activeCamera.quaternion.angleTo(initialHeadQuat) > 0.025) {
+        userPresenceDetected = true;
+      }
+    }
+  }
+  if (mode === 'guide' && (userPresenceDetected || !xrPresenting)) {
+    guideWatchedSec = Math.min(GUIDE_REQUIRED_SEC, guideWatchedSec + dt);
+  }
   const lockedTarget = updateStickyGazeAndMenu(activeCamera, dt, handRayState);
 
   if (mode === 'battle' && assetsReady) {
@@ -1395,6 +1453,9 @@ renderer.setAnimationLoop((now, xrFrame) => {
     handTracking: Boolean(inputState?.handSupported ?? caps.handTracking),
     handActive: handRayState.active || Boolean(inputState?.handActive),
     gestureHint,
+    guideWatchedSec,
+    guideRequiredSec: GUIDE_REQUIRED_SEC,
+    guideSkipArmed: isGuideSkipArmed(),
     camera: activeCamera,
     xrSessionActive: diagnostics.xrSessionActive || xrPresenting,
     megaSynced: megaBridge.stats().anchorCount > 0,
@@ -1462,6 +1523,10 @@ window.__webar = {
     isGlasses,
     mode,
     guideOpen: spatialInput.isGuideOpen() || (isGlasses && mode === 'guide'),
+    guideWatchedSec: Number(guideWatchedSec.toFixed(2)),
+    guideRequiredSec: GUIDE_REQUIRED_SEC,
+    guideSkipArmed: isGuideSkipArmed(),
+    userPresenceDetected,
     difficulty,
     assetsReady,
     cameraActive,

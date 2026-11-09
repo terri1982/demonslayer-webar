@@ -50,14 +50,14 @@ export function androidRotationVectorToThreeQuaternion(qx, qy, qz, qw, screenAng
 }
 
 export const V2_INTERACTION_GUIDE_ITEMS = [
-  { key: '轻点盲操板', desc: '普通攻击 / 菜单确认（全时段生效，无需低头找按键）' },
-  { key: '快速左滑 / 右滑 (<=200ms)', desc: '左闪 / 右闪紧急横向闪避（全时段生效）' },
-  { key: '按住盲操板持续推 (>200ms)', desc: '平滑走位（上推前进、下拉后退、左右横移，零闪避串扰）' },
-  { key: '右手左右连挥 3 下 (S24)', desc: '贰之型·水车（左-右-左 或 右-左-右 旋斩群攻）' },
-  { key: '右手向前出拳 / 出指 (S24)', desc: '柒之型·雫波纹击刺（9.2m 直线贯通破招）' },
-  { key: '右手手掌 ✋ 竖起朝前 (S24)', desc: '持续水镜格挡弹反（放手即收盾；双指按住亦可格挡）' },
-  { key: '右手握拳保持 3 秒 (S24)', desc: '准星蓄力环满 100% 释放全集中水车合击大招' },
-  { key: '免晃动手机 / Beam Pro', desc: '机身陀螺仪射线已彻底关闭，视线看向恶鬼即自动锁敌' },
+  { key: '① 抬手前左右滑 (S24)', desc: '贰之型·水车（抬右手至前方左-右-左连挥，下方自然垂手防误触）' },
+  { key: '② 右手向前出拳 / 出指 (S24)', desc: '柒之型·雫波纹击刺（9.2m 直线贯通破招）' },
+  { key: '③ 右手手掌 ✋ 竖起朝前 (S24)', desc: '持续水镜格挡弹反（放手即收盾；双指按住亦可格挡）' },
+  { key: '④ 抬手握拳保持 2 秒 (S24)', desc: '前方巨型读圈蓄满 2 秒释放全集中水车合击大招（70% 激活区时间占比防误触）' },
+  { key: '⑤ 轻点盲操板', desc: '普通攻击 / 菜单确认（全时段生效，无需低头找按键）' },
+  { key: '⑥ 快速左滑 / 右滑 (<=200ms)', desc: '左闪 / 右闪紧急横向闪避（全时段生效）' },
+  { key: '⑦ 按住盲操板持续推 (>200ms)', desc: '平滑走位（上推前进、下拉后退、左右横移，零闪避串扰）' },
+  { key: '⑧ 免晃动手机 / Beam Pro', desc: '机身陀螺仪射线已彻底关闭，视线看向恶鬼即自动锁敌' },
 ];
 
 // 2. Handheld / Desktop Pose Controller:
@@ -668,6 +668,7 @@ export function createSpatialInputBridge({
   let guardEmitted = false;
   let ultChargeProgress = 0;
   let guideOpen = false;
+  let guideSkipOnTap = true;
   const moveState = { x: 0, y: 0, forward: 0, strafe: 0, active: false };
   let latestInputState = null;
 
@@ -826,11 +827,12 @@ export function createSpatialInputBridge({
 
   function showInteractionGuide(opts = {}) {
     tryBindHost();
+    guideSkipOnTap = opts.skipOnTap !== undefined ? Boolean(opts.skipOnTap) : true;
     const mergedOpts = {
-      title: '鬼灭之刃 · AR 空间操作说明 v2.0',
+      title: '鬼灭之刃 · AR 空间操作动图教学 v2.0',
       subtitle: '右手隔空手势 + 全时手机盲操板协同 · 全程免晃动手机/Beam Pro',
       skipLabel: '跳过说明 →',
-      skipOnTap: true,
+      skipOnTap: guideSkipOnTap,
       stereo: isGlasses,
       domInGlasses: !isGlasses,
       items: V2_INTERACTION_GUIDE_ITEMS,
@@ -884,7 +886,7 @@ export function createSpatialInputBridge({
       lastGestureSummary = `hand:${type}${ev.direction ? `(${ev.direction})` : ''}`;
     }
 
-    if (isGuideOpen() && type === 'pinch') {
+    if (guideSkipOnTap && isGuideOpen() && type === 'pinch') {
       dismissInteractionGuide('pinch');
       return;
     }
@@ -895,12 +897,11 @@ export function createSpatialInputBridge({
         onSlash?.({ direction, speed: Number(ev.speed) || 0, source: 'hand-slash' });
         break;
       case 'wave-combo':
-      case 'circle':
-        setUltChargeState(0, { active: false, source: `hand-${type}` });
+        setUltChargeState(0, { active: false, source: 'hand-wave-combo' });
         onWaterWheel?.({
           clockwise,
           direction: ev.direction || (clockwise ? 'lrl' : 'rlr'),
-          source: type === 'wave-combo' ? 'hand-wave-combo' : 'hand-circle',
+          source: 'hand-wave-combo',
         });
         break;
       case 'thrust':
@@ -939,15 +940,6 @@ export function createSpatialInputBridge({
       case 'fist-ult':
         setUltChargeState(0, { active: false, completed: true, source: 'hand-fist-ult' });
         onUltimate?.({ forceMusou: true, source: 'hand-fist-ult' });
-        break;
-      case 'fist-hold':
-        // Legacy v1.5.2 compatibility fallback only
-        palmGuardHeld = true;
-        syncGuardOutput('hand-fist-hold-legacy');
-        break;
-      case 'open-palm':
-        // Legacy v1.5.2 compatibility fallback only
-        onUltimate?.({ forceMusou: false, source: 'hand-open-palm-legacy' });
         break;
       case 'pinch':
         onPinch?.({ source: 'hand-pinch', allowFallbackPrimary: true });
@@ -1012,7 +1004,7 @@ export function createSpatialInputBridge({
     const type = ev.type;
     lastGestureSummary = `trackpad:${type}`;
 
-    if (isGuideOpen() && type === 'tap') {
+    if (guideSkipOnTap && isGuideOpen() && type === 'tap') {
       dismissInteractionGuide('tap');
       return;
     }

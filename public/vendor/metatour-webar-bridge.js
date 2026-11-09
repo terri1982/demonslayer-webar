@@ -925,9 +925,9 @@
       } else if (ev.type === 'palm-release') {
         extra = ' (放手收盾)';
       } else if (ev.type === 'fist-ult') {
-        extra = ' (握拳3秒蓄满·释放大招!)';
+        extra = ' (抬手握拳2秒蓄满·释放大招!)';
       } else if (ev.type === 'fist-charge-cancel') {
-        extra = ' (握拳未满3秒·取消蓄力)';
+        extra = ' (握拳未满2秒·取消蓄力)';
       }
       recordBridgeEvent('隔空', ev.type + extra);
     }
@@ -1526,7 +1526,7 @@
       warnings.push('已接入隔空手势但未监听 onTrackpadGesture，右手放下或无手势眼镜时将缺少点按普攻/快滑闪避兜底');
     }
     return {
-      version: '1.5.4',
+      version: '1.5.6',
       mode: detectMode(),
       rawMode: detectRawMode(),
       simProfile: simProfile,
@@ -1540,23 +1540,23 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Reusable Onboarding Spatial Interaction Guide (v1.5.4)
+  // Reusable Onboarding Spatial Interaction Guide (v1.5.6)
   // Native <dialog closedby="any"> in 2D; dual-eye SBS or 3D state sync in Glasses.
   // Built strictly via createElement / textContent / replaceChildren (zero innerHTML).
   // ---------------------------------------------------------------------------
   var DEFAULT_GUIDE_ITEMS = [
-    { key: '轻点盲操板', desc: '普通攻击 / 菜单确认（无需低头找按键）' },
-    { key: '按住盲操板推 (>200ms)', desc: '持续平滑走位（上推前进、下拉后退、左右横移）' },
-    { key: '盲操板快速左/右滑', desc: '左闪 / 右闪（<=200ms 快速横拂触发闪避，与推盘走位零串扰）' },
-    { key: '右手左右挥 3 下 (S24)', desc: '水车旋斩（左-右-左 或 右-左-右 连挥）' },
-    { key: '右手向前出拳 / 出指 (S24)', desc: '突刺冲锋（朝正前方快速推出）' },
-    { key: '右手手掌 ✋ 竖起朝前 (S24)', desc: '持续格挡架盾（放手收盾；手机双指按住亦可格挡）' },
-    { key: '右手握拳保持 3 秒 (S24)', desc: '蓄力满 3 秒释放必杀大招（中途松开取消蓄力）' },
-    { key: '免晃动手机 / Beam Pro', desc: '机身陀螺仪射线已彻底关闭，握持移动机身零干扰' }
+    { key: '① 抬手前左右滑 (S24)', desc: '水车旋斩（抬右手至前方左-右-左连挥，下方自然垂手防误触）' },
+    { key: '② 右手向前出拳 / 出指 (S24)', desc: '突刺冲锋（朝正前方快速推出）' },
+    { key: '③ 右手手掌 ✋ 竖起朝前 (S24)', desc: '持续格挡架盾（放手收盾；手机双指按住亦可格挡）' },
+    { key: '④ 抬手握拳保持 2 秒 (S24)', desc: '前方巨型读圈蓄满 2 秒释放必杀大招（70% 激活区时间占比防误触）' },
+    { key: '⑤ 轻点盲操板', desc: '普通攻击 / 菜单确认（无需低头找按键）' },
+    { key: '⑥ 盲操板快速左/右滑', desc: '左闪 / 右闪（<=200ms 快速横拂触发闪避，与推盘走位零串扰）' },
+    { key: '⑦ 按住盲操板推 (>200ms)', desc: '持续平滑走位（上推前进、下拉后退、左右横移）' },
+    { key: '⑧ 免晃动手机 / Beam Pro', desc: '机身陀螺仪射线已彻底关闭，握持移动机身零干扰' }
   ];
 
   var GUIDE_CSS = [
-    'dialog.mt-guide-dialog { border: 1px solid rgba(244, 194, 106, 0.55); border-radius: 18px; padding: 0; background: rgba(11, 22, 35, 0.96); color: #f8fafc; width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 28px); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.65); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }',
+    'dialog.mt-guide-dialog { border: 1px solid rgba(244, 194, 106, 0.55); border-radius: 18px; padding: 0; background: rgba(11, 22, 35, 0.96); color: #f8fafc; width: min(580px, calc(100vw - 24px)); max-height: calc(100dvh - 28px); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.65); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }',
     'dialog.mt-guide-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }',
     'dialog.mt-guide-dialog:modal { overscroll-behavior: contain; }',
     'dialog.mt-guide-dialog::backdrop { background: rgba(2, 6, 23, 0.68); backdrop-filter: blur(6px); overflow: hidden; overscroll-behavior: contain; }',
@@ -1565,8 +1565,9 @@
     '.mt-guide-skip-btn { appearance: none; min-height: 44px; min-width: 96px; padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(255, 232, 185, 0.85); background: linear-gradient(135deg, #f4c26a 0%, #e59934 100%); color: #0f172a; font-size: 13.5px; font-weight: 800; cursor: pointer; flex-shrink: 0; }',
     '.mt-guide-skip-btn:hover { filter: brightness(1.06); }',
     '.mt-guide-skip-btn:focus-visible { outline: 3px solid #38bdf8; outline-offset: 3px; }',
-    '.mt-guide-body { padding: 14px 18px 16px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; display: flex; flex-direction: column; gap: 8px; }',
-    '.mt-guide-sub { margin: 0 0 4px; font-size: 12.5px; color: #cbd5e1; line-height: 1.45; }',
+    '.mt-guide-body { padding: 12px 18px 14px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; display: flex; flex-direction: column; gap: 8px; }',
+    '.mt-guide-anim { width: 100%; height: 112px; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.38); background: rgba(6, 14, 24, 0.92); display: block; }',
+    '.mt-guide-sub { margin: 0 0 2px; font-size: 12.5px; color: #cbd5e1; line-height: 1.45; }',
     '.mt-guide-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }',
     '.mt-guide-item { background: rgba(30, 41, 59, 0.72); border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 10px; padding: 8px 10px; }',
     '.mt-guide-k { display: block; font-size: 12.5px; font-weight: 700; color: #38bdf8; margin-bottom: 2px; }',
@@ -1784,7 +1785,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Zero-dependency Shadow DOM Spatial Interaction DevTools (v1.5.4)
+  // Zero-dependency Shadow DOM Spatial Interaction DevTools (v1.5.5)
   // Built strictly via createElement / textContent (zero innerHTML).
   // ---------------------------------------------------------------------------
   var sharedDevSheet = null;
@@ -1913,7 +1914,7 @@
     panel.setAttribute('data-collapsed', devToolsState.collapsed ? 'true' : 'false');
 
     var head = makeEl(doc, 'div', 'mt-head');
-    var titleEl = makeEl(doc, 'div', 'mt-title', '🛠️ 眼镜空间交互模拟器 v1.5.4');
+    var titleEl = makeEl(doc, 'div', 'mt-title', '🛠️ 眼镜空间交互模拟器 v1.5.6');
     var headBtns = makeEl(doc, 'div', 'mt-head-btns');
     var guideBtn = makeBtn(doc, '说明', function () {
       showInteractionGuide();
@@ -2007,7 +2008,7 @@
       simulateInput({ kind: 'hand-gesture', type: devToolsState.palmHeld ? 'palm-hold' : 'palm-release' });
     }, 'mt-warn');
     airGrid2.appendChild(palmBtn);
-    var fistUltBtn = makeBtn(doc, '握拳3s大招', function () {
+    var fistUltBtn = makeBtn(doc, '握拳2s大招', function () {
       if (devToolsState.fistChargeTimer) {
         clearInterval(devToolsState.fistChargeTimer);
         devToolsState.fistChargeTimer = 0;
@@ -2021,7 +2022,7 @@
       simulateInput({ kind: 'hand-gesture', type: 'fist-charge', speed: 0.08 });
       devToolsState.fistChargeTimer = setInterval(function () {
         var elapsed = nowMs() - devToolsState.fistChargeStartMs;
-        if (elapsed >= 3000) {
+        if (elapsed >= 2000) {
           clearInterval(devToolsState.fistChargeTimer);
           devToolsState.fistChargeTimer = 0;
           simulateInput({ kind: 'hand-gesture', type: 'fist-charge', speed: 1.0 });
@@ -2029,7 +2030,7 @@
           simulateInput({ kind: 'hand-gesture', type: 'fist-release' });
           if (typeof devUiRefreshHook === 'function') devUiRefreshHook();
         } else {
-          simulateInput({ kind: 'hand-gesture', type: 'fist-charge', speed: Math.min(0.99, elapsed / 3000) });
+          simulateInput({ kind: 'hand-gesture', type: 'fist-charge', speed: Math.min(0.99, elapsed / 2000) });
         }
       }, 100);
     }, 'mt-warn');
@@ -2222,7 +2223,7 @@
       fistUltBtn.setAttribute('aria-pressed', charging ? 'true' : 'false');
       fistUltBtn.textContent = charging
         ? ('蓄力 ' + Math.round(st.fistChargeProgress * 100) + '% (点取消)')
-        : '握拳3s大招';
+        : '握拳2s大招';
 
       axesReadout.textContent =
         'mode: ' + st.mode + (st.simulated ? ' (模拟)' : '') + '\n' +
@@ -2307,7 +2308,7 @@
 
   window.MetaTourWebAR = {
     __initialized: true,
-    version: '1.5.4',
+    version: '1.5.6',
     sensors: sensorsApi,
     getMode: detectMode,
     getCapabilities: getCapabilities,

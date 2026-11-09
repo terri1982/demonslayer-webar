@@ -35,16 +35,16 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   );
   group.add(plaqueMesh);
 
-  // Dedicated 1:1 Onboarding Spatial Interaction Guide v2.0 3D Plaque (mode === 'guide')
+  // Dedicated 1:1 Onboarding Spatial Interaction Guide v2.0 3D Animated Plaque (mode === 'guide')
   const guideCanvas = document.createElement('canvas');
   guideCanvas.width = 1024;
-  guideCanvas.height = 468;
+  guideCanvas.height = 540;
   const guideCtx = guideCanvas.getContext('2d');
   const guideTex = new T.CanvasTexture(guideCanvas);
   guideTex.colorSpace = T.SRGBColorSpace;
   guideTex.anisotropy = 4;
   const guideMesh = new T.Mesh(
-    new T.PlaneGeometry(0.94, 0.43),
+    new T.PlaneGeometry(1.02, 0.54),
     new T.MeshBasicMaterial({
       map: guideTex,
       transparent: true,
@@ -52,7 +52,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
       side: T.DoubleSide,
     }),
   );
-  guideMesh.position.set(0.04, 1.74, -2.16);
+  guideMesh.position.set(0.04, 1.66, -2.14);
   guideMesh.visible = false;
   worldRoot.add(guideMesh);
 
@@ -110,16 +110,16 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     width: 0.76,
     height: 0.19,
     hitWidth: 0.94,
-    hitHeight: 0.25,
-    y: 1.52,
+    hitHeight: 0.23,
+    y: isGlasses ? 1.24 : 1.52,
     z: -2.14,
   });
   const secondaryBtn = createMenuButtonSlot({
     width: 0.68,
     height: 0.148,
     hitWidth: 0.86,
-    hitHeight: 0.19,
-    y: 1.23,
+    hitHeight: 0.18,
+    y: isGlasses ? 1.03 : 1.23,
     z: -2.14,
   });
 
@@ -275,19 +275,19 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   const chevronLeft = createChevronMesh(true);
   const chevronRight = createChevronMesh(false);
 
-  // --- v2.0 3-Second Fist Charge Progress Ring around 3D Reticle (0% .. 100%) ---
+  // --- v1.5.6 Enlarged 2-Second Fist Charge Progress Ring around 3D Reticle (0% .. 100%) ---
   const ultChargeCanvas = document.createElement('canvas');
-  ultChargeCanvas.width = 256;
-  ultChargeCanvas.height = 256;
+  ultChargeCanvas.width = 512;
+  ultChargeCanvas.height = 512;
   const ultChargeCtx = ultChargeCanvas.getContext('2d');
   const ultChargeTex = new T.CanvasTexture(ultChargeCanvas);
   ultChargeTex.colorSpace = T.SRGBColorSpace;
   const ultChargeMesh = new T.Mesh(
-    new T.PlaneGeometry(0.19, 0.19),
+    new T.PlaneGeometry(0.48, 0.48),
     new T.MeshBasicMaterial({
       map: ultChargeTex,
       transparent: true,
-      opacity: 0.96,
+      opacity: 0.98,
       side: T.DoubleSide,
       depthWrite: false,
       depthTest: false,
@@ -347,80 +347,295 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
   }
 
   function renderGuidePlaque(state) {
-    const sig = JSON.stringify(state);
+    const animBucket = Math.floor((Number(state.nowSec) || 0) * 24);
+    const watchedRatio = Math.max(0, Math.min(1, (Number(state.watchedSec) || 0) / Math.max(1, Number(state.requiredSec) || 8)));
+    const sig = `${state.badge}|${state.difficulty}|${state.handTracking}|${state.skipArmed}|${Math.round(watchedRatio * 40)}|${animBucket}`;
     if (sig === lastGuideSig) return;
     lastGuideSig = sig;
 
     const w = guideCanvas.width;
     const h = guideCanvas.height;
+    const nowSec = Number(state.nowSec) || 0;
+    const stepIndex = Math.floor((nowSec / 2.0) % 4);
+    const stepPhase = (nowSec % 2.0) / 2.0;
+
     guideCtx.clearRect(0, 0, w, h);
 
     const grad = guideCtx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, 'rgba(8, 20, 34, 0.94)');
-    grad.addColorStop(0.5, 'rgba(13, 32, 48, 0.94)');
-    grad.addColorStop(1, 'rgba(9, 22, 36, 0.94)');
-    drawRoundedRect(guideCtx, 14, 14, w - 28, h - 28, 24);
+    grad.addColorStop(0, 'rgba(7, 18, 32, 0.96)');
+    grad.addColorStop(0.5, 'rgba(12, 30, 48, 0.96)');
+    grad.addColorStop(1, 'rgba(8, 20, 34, 0.96)');
+    drawRoundedRect(guideCtx, 12, 12, w - 24, h - 24, 24);
     guideCtx.fillStyle = grad;
     guideCtx.fill();
     guideCtx.lineWidth = 3.5;
-    guideCtx.strokeStyle = 'rgba(255, 214, 130, 0.85)';
+    guideCtx.strokeStyle = state.skipArmed ? '#ffd98e' : 'rgba(125, 249, 255, 0.85)';
     guideCtx.stroke();
 
+    // Header
     guideCtx.textAlign = 'left';
     guideCtx.fillStyle = '#ffd98e';
     guideCtx.font = '700 22px "PingFang SC", "Microsoft YaHei", sans-serif';
-    guideCtx.fillText('鬼灭之刃 · AR 空间操作说明 v2.0', 40, 56);
+    guideCtx.fillText('鬼灭之刃 · AR 空间动作实时动图教学 v1.5.6', 36, 50);
 
     guideCtx.textAlign = 'right';
     guideCtx.fillStyle = '#7df9ff';
-    guideCtx.font = '600 20px "PingFang SC", "Microsoft YaHei", sans-serif';
-    guideCtx.fillText(`${state.badge} · 免晃动手机`, w - 40, 56);
+    guideCtx.font = '600 19px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText(
+      `教学进度 ${Math.round(watchedRatio * 100)}% · ${state.badge} · 免晃动手机`,
+      w - 36,
+      50,
+    );
     guideCtx.textAlign = 'left';
 
-    const leftRows = [
-      ['📱 轻点盲操板', '普通攻击 / 菜单确认（全时有效）'],
-      ['📱 快滑左 / 右', '<=0.2s 触发左闪 / 右闪'],
-      ['📱 按住持续推', '>0.2s 平滑走位（零闪避串扰）'],
-      ['📱 双指按住', '持续水镜格挡兜底'],
-    ];
-    const rightRows = [
-      ['🖐️ 左右连挥3下', '贰之型·水车（三连旋斩）'],
-      ['🖐️ 向前出拳/指', '柒之型·雫波纹击刺（破招）'],
-      ['✋ 竖掌朝前保持', '持续水镜格挡（放手即收盾）'],
-      ['✊ 握拳保持3秒', '准星满100%释放水车合击大招'],
-    ];
+    // Left Animated Stage (x=34..474, y=68..438)
+    const sx = 34;
+    const sy = 68;
+    const sw = 440;
+    const sh = 370;
+    drawRoundedRect(guideCtx, sx, sy, sw, sh, 18);
+    guideCtx.fillStyle = 'rgba(6, 16, 28, 0.92)';
+    guideCtx.fill();
+    guideCtx.lineWidth = 2;
+    guideCtx.strokeStyle = 'rgba(125, 249, 255, 0.42)';
+    guideCtx.stroke();
 
+    // Active Zone Box (Upper 70%+ zone)
+    const azX = sx + 22;
+    const azY = sy + 42;
+    const azW = sw - 44;
+    const azH = 216;
+    guideCtx.save();
+    guideCtx.setLineDash([8, 6]);
+    drawRoundedRect(guideCtx, azX, azY, azW, azH, 14);
+    guideCtx.fillStyle = 'rgba(16, 58, 78, 0.34)';
+    guideCtx.fill();
+    guideCtx.lineWidth = 2.2;
+    guideCtx.strokeStyle = 'rgba(125, 249, 255, 0.78)';
+    guideCtx.stroke();
+    guideCtx.restore();
+
+    guideCtx.fillStyle = '#9ef6ff';
+    guideCtx.font = '700 15px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText('▲ 胸前/眼前激活区（动作 ≥70% 时间在此区内即有效）', azX + 12, azY + 22);
+
+    // Low Resting Rejection Zone (Bottom strip)
+    const lzY = azY + azH + 10;
+    drawRoundedRect(guideCtx, azX, lzY, azW, 38, 10);
+    guideCtx.fillStyle = 'rgba(68, 18, 28, 0.48)';
+    guideCtx.fill();
+    guideCtx.fillStyle = '#ff9aa8';
+    guideCtx.font = '600 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText('▼ 下方自然垂手休息区（水车/握拳大招自动防误触拦截）', azX + 12, lzY + 24);
+
+    // Live Animated Vector Demonstration inside Active Zone
+    const cx = azX + azW / 2;
+    const cy = azY + 122;
+    guideCtx.save();
+    if (stepIndex === 0) {
+      // Step 0: Water Wheel — Raised hand L-R-L horizontal wave
+      const waveX = cx + Math.sin(stepPhase * Math.PI * 3) * 112;
+      const waveY = cy + Math.cos(stepPhase * Math.PI * 6) * 8;
+      guideCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      guideCtx.lineWidth = 8;
+      guideCtx.beginPath();
+      guideCtx.moveTo(cx - 112, cy);
+      guideCtx.lineTo(cx + 112, cy);
+      guideCtx.stroke();
+
+      for (let k = 0; k < 3; k++) {
+        const trailPhase = Math.max(0, stepPhase - k * 0.06);
+        const tx = cx + Math.sin(trailPhase * Math.PI * 3) * 112;
+        guideCtx.beginPath();
+        guideCtx.arc(tx, cy, 34 - k * 7, 0, Math.PI * 2);
+        guideCtx.strokeStyle = `rgba(125, 249, 255, ${0.75 - k * 0.22})`;
+        guideCtx.lineWidth = 4;
+        guideCtx.stroke();
+      }
+      guideCtx.textAlign = 'center';
+      guideCtx.textBaseline = 'middle';
+      guideCtx.font = '700 42px "PingFang SC", sans-serif';
+      guideCtx.fillText('🖐️', waveX, waveY);
+      guideCtx.fillStyle = '#ffd98e';
+      guideCtx.font = '700 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText('◀ ── 抬手在前方左右连滑 3 下 ── ▶', cx, azY + azH - 18);
+    } else if (stepIndex === 1) {
+      // Step 1: Piercing Thrust — Forward punch / point with concentric ripples
+      const punchProgress = Math.sin(Math.min(1, stepPhase * 1.4) * Math.PI);
+      for (let rIdx = 0; rIdx < 3; rIdx++) {
+        const rr = 24 + ((stepPhase * 90 + rIdx * 28) % 84);
+        guideCtx.beginPath();
+        guideCtx.arc(cx, cy - 6, rr, 0, Math.PI * 2);
+        guideCtx.strokeStyle = `rgba(125, 249, 255, ${Math.max(0.15, 0.85 - rr / 100)})`;
+        guideCtx.lineWidth = 3.5;
+        guideCtx.stroke();
+      }
+      const handScale = 36 + punchProgress * 22;
+      guideCtx.textAlign = 'center';
+      guideCtx.textBaseline = 'middle';
+      guideCtx.font = `700 ${Math.round(handScale)}px "PingFang SC", sans-serif`;
+      guideCtx.fillText('👊', cx, cy - punchProgress * 12);
+      guideCtx.fillStyle = '#9efcff';
+      guideCtx.font = '700 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText('▲ 向前直线出拳 / 伸指突刺破招', cx, azY + azH - 18);
+    } else if (stepIndex === 2) {
+      // Step 2: Upright Open Palm Guard — Hexagonal Water Mirror Shield
+      const rot = nowSec * 1.2;
+      guideCtx.strokeStyle = '#7df9ff';
+      guideCtx.fillStyle = 'rgba(56, 189, 248, 0.22)';
+      guideCtx.lineWidth = 4;
+      guideCtx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = rot + (i * Math.PI) / 3;
+        const hx = cx + Math.cos(a) * 62;
+        const hy = cy - 4 + Math.sin(a) * 62;
+        if (i === 0) guideCtx.moveTo(hx, hy);
+        else guideCtx.lineTo(hx, hy);
+      }
+      guideCtx.closePath();
+      guideCtx.fill();
+      guideCtx.stroke();
+
+      guideCtx.textAlign = 'center';
+      guideCtx.textBaseline = 'middle';
+      guideCtx.font = '700 44px "PingFang SC", sans-serif';
+      guideCtx.fillText('✋', cx, cy - 2);
+      guideCtx.fillStyle = '#7df9ff';
+      guideCtx.font = '700 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText('✋ 竖掌朝前保持 = 持续水镜格挡（放手即收）', cx, azY + azH - 18);
+    } else {
+      // Step 3: Raised Fist 2.0s Giant Countdown Ring Ultimate
+      const pct = Math.min(1, stepPhase * 1.15);
+      const remSec = Math.max(0, 2.0 * (1 - pct)).toFixed(1);
+      guideCtx.beginPath();
+      guideCtx.arc(cx, cy - 6, 58, 0, Math.PI * 2);
+      guideCtx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      guideCtx.lineWidth = 12;
+      guideCtx.stroke();
+
+      guideCtx.beginPath();
+      guideCtx.arc(cx, cy - 6, 58, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+      guideCtx.strokeStyle = pct >= 0.95 ? '#ffd98e' : '#38bdf8';
+      guideCtx.lineWidth = 13;
+      guideCtx.lineCap = 'round';
+      guideCtx.stroke();
+
+      guideCtx.textAlign = 'center';
+      guideCtx.textBaseline = 'middle';
+      guideCtx.font = '700 36px "PingFang SC", sans-serif';
+      guideCtx.fillText('✊', cx, cy - 18);
+      guideCtx.fillStyle = '#ffe39f';
+      guideCtx.font = '700 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(`${remSec}s`, cx, cy + 20);
+      guideCtx.fillStyle = '#ffd98e';
+      guideCtx.font = '700 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText('✊ 抬手前方握拳 2 秒 · 巨型读圈满放大招', cx, azY + azH - 18);
+    }
+    guideCtx.restore();
+
+    // Stage Footer Caption
+    const stepTitles = [
+      '实时演示 ①/4：贰之型·水车（抬手前左右滑）',
+      '实时演示 ②/4：柒之型·雫波纹击刺（向前出拳/指）',
+      '实时演示 ③/4：水镜格挡（竖掌 ✋ 朝前保持）',
+      '实时演示 ④/4：必杀大招（抬手前方握拳 2.0 秒）',
+    ];
+    guideCtx.textAlign = 'left';
+    guideCtx.textBaseline = 'alphabetic';
+    guideCtx.fillStyle = '#ffe3a3';
+    guideCtx.font = '700 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText(stepTitles[stepIndex], sx + 22, sy + 28);
+    guideCtx.fillStyle = '#d4eef0';
+    guideCtx.font = '500 15px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText('中间换向短暂出区不影响，70% 时间在激活区内即有效', sx + 22, sy + sh - 14);
+
+    // Right Pane: 4 Action Cards + All-Time Blind Pad Bar (x=492..990, y=68..438)
+    const rightSteps = [
+      ['① 🖐️ 抬手前左右滑 (水车)', '抬手在胸前/眼前连挥 3 下 · 低处自然垂手不误触'],
+      ['② 👊 向前出拳 / 伸指 (突刺)', '柒之型·雫波纹击刺 · 直线水矛远程破招打断'],
+      ['③ ✋ 竖掌朝前保持 (格挡)', '持续展开水镜护盾弹反 · 放手立即收盾零粘滞'],
+      ['④ ✊ 抬手前方握拳 2 秒 (大招)', '巨型读圈倒计时 2.0s 蓄满释放全集中水车合击'],
+    ];
     for (let i = 0; i < 4; i++) {
-      const ry = 84 + i * 76;
-      drawRoundedRect(guideCtx, 36, ry, 462, 64, 14);
-      guideCtx.fillStyle = 'rgba(18, 42, 62, 0.78)';
+      const ry = 68 + i * 74;
+      const activeCard = i === stepIndex;
+      drawRoundedRect(guideCtx, 492, ry, 498, 66, 14);
+      guideCtx.fillStyle = activeCard ? 'rgba(22, 68, 92, 0.94)' : 'rgba(14, 36, 54, 0.80)';
       guideCtx.fill();
-      guideCtx.fillStyle = '#ffe3a3';
-      guideCtx.font = '700 21px "PingFang SC", "Microsoft YaHei", sans-serif';
-      guideCtx.fillText(leftRows[i][0], 52, ry + 27);
-      guideCtx.fillStyle = '#d4eef0';
-      guideCtx.font = '500 18px "PingFang SC", "Microsoft YaHei", sans-serif';
-      guideCtx.fillText(leftRows[i][1], 52, ry + 51, 430);
+      guideCtx.lineWidth = activeCard ? 3 : 1.5;
+      guideCtx.strokeStyle = activeCard ? '#ffd98e' : 'rgba(125, 249, 255, 0.28)';
+      guideCtx.stroke();
 
-      drawRoundedRect(guideCtx, 526, ry, 462, 64, 14);
-      guideCtx.fillStyle = 'rgba(16, 46, 66, 0.84)';
-      guideCtx.fill();
-      guideCtx.fillStyle = '#8ef8ff';
-      guideCtx.font = '700 21px "PingFang SC", "Microsoft YaHei", sans-serif';
-      guideCtx.fillText(rightRows[i][0], 542, ry + 27);
+      guideCtx.fillStyle = activeCard ? '#ffe39f' : '#8ef8ff';
+      guideCtx.font = '700 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(rightSteps[i][0], 510, ry + 27);
+
+      if (activeCard) {
+        guideCtx.textAlign = 'right';
+        guideCtx.fillStyle = '#ffd98e';
+        guideCtx.font = '700 15px "PingFang SC", "Microsoft YaHei", sans-serif';
+        guideCtx.fillText('▶ 动图演示中', 974, ry + 26);
+        guideCtx.textAlign = 'left';
+      }
+
       guideCtx.fillStyle = '#d8f3f5';
-      guideCtx.font = '500 18px "PingFang SC", "Microsoft YaHei", sans-serif';
-      guideCtx.fillText(rightRows[i][1], 542, ry + 51, 430);
+      guideCtx.font = '500 17px "PingFang SC", "Microsoft YaHei", sans-serif';
+      guideCtx.fillText(rightSteps[i][1], 510, ry + 52, 464);
     }
 
-    guideCtx.fillStyle = '#ffd98e';
-    guideCtx.font = '600 20px "PingFang SC", "Microsoft YaHei", sans-serif';
-    guideCtx.fillText(
-      '提示：平视下方金色【跳过说明 · 拔刀开战 →】按钮、轻点手机盲操板或右手捏合均可一键跳过',
-      40,
-      428,
-      w - 80,
-    );
+    // All-Time Blind Pad Summary Card
+    drawRoundedRect(guideCtx, 492, 368, 498, 70, 14);
+    guideCtx.fillStyle = 'rgba(20, 44, 64, 0.88)';
+    guideCtx.fill();
+    guideCtx.lineWidth = 2;
+    guideCtx.strokeStyle = 'rgba(255, 217, 142, 0.55)';
+    guideCtx.stroke();
+    guideCtx.fillStyle = '#ffe3a3';
+    guideCtx.font = '700 19px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText('📱 手机盲操板（全时并发可用 · 不受手势阻断）', 510, 395);
+    guideCtx.fillStyle = '#d4eef0';
+    guideCtx.font = '500 17px "PingFang SC", "Microsoft YaHei", sans-serif';
+    guideCtx.fillText('轻点=普攻挥斩 ｜ 快滑左/右(≤0.2s)=左/右闪 ｜ 按住推=平滑走位', 510, 422, 468);
+
+    // Bottom Watch Progress & Confirm-to-Skip Status Bar
+    const barY = 452;
+    drawRoundedRect(guideCtx, 34, barY, w - 68, 64, 16);
+    guideCtx.fillStyle = state.skipArmed
+      ? 'rgba(78, 48, 12, 0.94)'
+      : watchedRatio >= 1
+        ? 'rgba(14, 64, 74, 0.94)'
+        : 'rgba(10, 28, 44, 0.92)';
+    guideCtx.fill();
+    guideCtx.lineWidth = 2.5;
+    guideCtx.strokeStyle = state.skipArmed ? '#ffd98e' : watchedRatio >= 1 ? '#7df9ff' : 'rgba(125, 249, 255, 0.45)';
+    guideCtx.stroke();
+
+    // Progress Fill Track
+    drawRoundedRect(guideCtx, 52, barY + 42, w - 104, 10, 5);
+    guideCtx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    guideCtx.fill();
+    if (watchedRatio > 0 || state.skipArmed) {
+      drawRoundedRect(
+        guideCtx,
+        52,
+        barY + 42,
+        Math.max(16, (w - 104) * (state.skipArmed ? 1 : watchedRatio)),
+        10,
+        5,
+      );
+      guideCtx.fillStyle = state.skipArmed ? '#ffd98e' : '#7df9ff';
+      guideCtx.fill();
+    }
+
+    const remWatchSec = Math.max(0, Math.ceil((Number(state.requiredSec) || 8) - (Number(state.watchedSec) || 0)));
+    guideCtx.fillStyle = state.skipArmed ? '#ffe6a3' : watchedRatio >= 1 ? '#a8fbff' : '#ffd98e';
+    guideCtx.font = '700 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    const bottomText = state.skipArmed
+      ? '⚠️ 已触发跳过确认：请再次【轻点手机盲操板 / 右手捏合】或注视下方按钮确认跳过教学 →'
+      : watchedRatio >= 1
+        ? '✅ 4 项动图教学已播放完毕！请轻点手机盲操板、右手捏合或注视下方按钮拔刀开战 →'
+        : `🎬 请观看动图教学（剩余 ${remWatchSec}s）· 看完即可开战，或轻点手机盲操板两次【确认跳过】`;
+    guideCtx.fillText(bottomText, 52, barY + 30, w - 104);
 
     guideTex.needsUpdate = true;
   }
@@ -432,52 +647,95 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     lastUltChargeBucket = bucket;
 
     const c = ultChargeCtx;
-    c.clearRect(0, 0, 256, 256);
+    c.clearRect(0, 0, 512, 512);
     if (bucket <= 0) {
       ultChargeTex.needsUpdate = true;
       return;
     }
 
-    const cx = 128;
-    const cy = 108;
-    const r = 74;
+    const cx = 256;
+    const cy = 224;
+    const rOuter = 176;
+    const r = 150;
 
+    // Outer subtle water halo ring
     c.beginPath();
-    c.arc(cx, cy, r, 0, Math.PI * 2);
-    c.lineWidth = 12;
-    c.strokeStyle = 'rgba(12, 28, 44, 0.78)';
+    c.arc(cx, cy, rOuter, 0, Math.PI * 2);
+    c.lineWidth = 4;
+    c.strokeStyle = bucket >= 85 ? 'rgba(255, 217, 142, 0.55)' : 'rgba(125, 249, 255, 0.36)';
     c.stroke();
 
+    // Dark backing track
     c.beginPath();
     c.arc(cx, cy, r, 0, Math.PI * 2);
-    c.lineWidth = 8;
-    c.strokeStyle = 'rgba(125, 249, 255, 0.24)';
+    c.lineWidth = 28;
+    c.strokeStyle = 'rgba(8, 22, 36, 0.84)';
     c.stroke();
 
-    const grad = c.createLinearGradient(44, 32, 212, 184);
+    // Inner track rim
+    c.beginPath();
+    c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.lineWidth = 18;
+    c.strokeStyle = 'rgba(125, 249, 255, 0.22)';
+    c.stroke();
+
+    // 12 countdown tick marks around the giant ring
+    for (let i = 0; i < 12; i++) {
+      const ang = -Math.PI / 2 + (i / 12) * Math.PI * 2;
+      const activeTick = i / 12 <= clamped;
+      c.beginPath();
+      c.moveTo(cx + Math.cos(ang) * (r - 22), cy + Math.sin(ang) * (r - 22));
+      c.lineTo(cx + Math.cos(ang) * (r + 22), cy + Math.sin(ang) * (r + 22));
+      c.lineWidth = i % 3 === 0 ? 5 : 3;
+      c.strokeStyle = activeTick ? 'rgba(255, 232, 163, 0.9)' : 'rgba(125, 249, 255, 0.28)';
+      c.stroke();
+    }
+
+    const grad = c.createLinearGradient(76, 52, 436, 396);
     grad.addColorStop(0, '#7df9ff');
-    grad.addColorStop(0.65, '#38bdf8');
+    grad.addColorStop(0.55, '#38bdf8');
     grad.addColorStop(1, '#ffd98e');
 
     c.beginPath();
     c.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (bucket / 100));
-    c.lineWidth = 13;
+    c.lineWidth = 26;
     c.lineCap = 'round';
     c.strokeStyle = grad;
     c.stroke();
 
-    drawRoundedRect(c, 34, 198, 188, 44, 22);
-    c.fillStyle = 'rgba(8, 24, 38, 0.92)';
+    // Top inner pill above reticle center
+    drawRoundedRect(c, 136, 106, 240, 44, 22);
+    c.fillStyle = 'rgba(8, 24, 38, 0.90)';
     c.fill();
-    c.lineWidth = 2.5;
-    c.strokeStyle = bucket >= 90 ? '#ffd98e' : '#7df9ff';
-    c.stroke();
-
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillStyle = bucket >= 90 ? '#ffe49e' : '#d8fcff';
-    c.font = '700 22px "PingFang SC", "Microsoft YaHei", sans-serif';
-    c.fillText(`✊ 奥义 ${bucket}%`, 128, 220);
+    c.fillStyle = '#9efcff';
+    c.font = '700 23px "PingFang SC", "Microsoft YaHei", sans-serif';
+    c.fillText('✊ 全集中·大招蓄力', cx, 128);
+
+    // Giant Countdown Seconds readout below reticle center
+    const remainSec = Math.max(0, 2.0 * (1 - clamped)).toFixed(1);
+    drawRoundedRect(c, 126, 274, 260, 62, 30);
+    c.fillStyle = 'rgba(8, 22, 36, 0.92)';
+    c.fill();
+    c.lineWidth = 3;
+    c.strokeStyle = bucket >= 85 ? '#ffd98e' : '#7df9ff';
+    c.stroke();
+    c.fillStyle = bucket >= 85 ? '#ffe49e' : '#ffffff';
+    c.font = '700 36px "PingFang SC", "Microsoft YaHei", sans-serif';
+    c.fillText(`${remainSec}s · ${bucket}%`, cx, 305);
+
+    // Bottom Ultimate Callout Pill
+    drawRoundedRect(c, 48, 418, 416, 68, 34);
+    c.fillStyle = 'rgba(8, 24, 40, 0.94)';
+    c.fill();
+    c.lineWidth = 3.5;
+    c.strokeStyle = bucket >= 85 ? '#ffd98e' : '#7df9ff';
+    c.stroke();
+
+    c.fillStyle = bucket >= 85 ? '#ffe49e' : '#d8fcff';
+    c.font = '700 30px "PingFang SC", "Microsoft YaHei", sans-serif';
+    c.fillText(`水之呼吸 · 水车合击 (${bucket}%)`, cx, 452);
     c.textAlign = 'left';
     c.textBaseline = 'alphabetic';
 
@@ -814,17 +1072,30 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
     skillBannerMesh.visible = true;
   }
 
-  function getMenuDescriptors(mode, difficulty = 'normal') {
+  function getMenuDescriptors(
+    mode,
+    difficulty = 'normal',
+    { guideWatchedSec = 0, guideRequiredSec = 8, guideSkipArmed = false } = {},
+  ) {
     if (!isGlasses) return [];
     const diffLabel = difficulty === 'hashira' ? '柱合试炼（高烈度）' : '夜巡标准';
     if (mode === 'guide') {
+      const guideDone = guideWatchedSec >= guideRequiredSec;
+      const remSec = Math.max(1, Math.ceil(guideRequiredSec - guideWatchedSec));
+      const guideTitle = guideSkipArmed
+        ? '⚠️ 确认跳过教学？再次轻点立即开战 →'
+        : guideDone
+          ? '✅ 教学已看完 · 轻点或注视拔刀开战 →'
+          : `⏳ 观看动图教学 (${remSec}s) · 轻点可跳过`;
       return [
         {
           slot: primaryBtn,
           id: 'btn-skip-guide',
           secondary: false,
           goldPrimary: true,
-          title: '跳过说明 · 拔刀开战 →',
+          guideDone,
+          guideSkipArmed,
+          title: guideTitle,
         },
         {
           slot: secondaryBtn,
@@ -932,6 +1203,9 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
       handTracking = false,
       handActive = false,
       gestureHint = '',
+      guideWatchedSec = 0,
+      guideRequiredSec = 8,
+      guideSkipArmed = false,
       camera,
       xrSessionActive,
       megaSynced,
@@ -958,14 +1232,18 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         group.position.lerp(targetPlaquePos, Math.min(1, dt * 10));
         plaqueMesh.scale.lerp(targetPlaqueScale, Math.min(1, dt * 10));
 
-        const targetPrimaryY = mode === 'guide' ? 1.36 : 1.52;
-        const targetSecondaryY = mode === 'guide' ? 1.11 : 1.23;
+        const targetPrimaryY = mode === 'guide' ? 1.24 : 1.52;
+        const targetSecondaryY = mode === 'guide' ? 1.03 : 1.23;
         primaryBtn.group.position.y += (targetPrimaryY - primaryBtn.group.position.y) * Math.min(1, dt * 12);
         secondaryBtn.group.position.y += (targetSecondaryY - secondaryBtn.group.position.y) * Math.min(1, dt * 12);
       }
 
       // Phase A Dual 3D Spatial Menu Buttons
-      const descriptors = getMenuDescriptors(mode, difficulty);
+      const descriptors = getMenuDescriptors(mode, difficulty, {
+        guideWatchedSec,
+        guideRequiredSec,
+        guideSkipArmed,
+      });
       if (descriptors.length === 0) {
         primaryBtn.group.visible = false;
         secondaryBtn.group.visible = false;
@@ -985,20 +1263,36 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
               ? `目光移此停留 ${dwellBadge} 切换${mode === 'result' ? '返回庭院' : '试炼难度'}`
               : `瞄准此牌后${handTracking ? '右手捏合' : '轻点盲操板'}切换`
             : desc.goldPrimary
-              ? `注视 ${dwellBadge} / 轻点手机盲操板 / 右手捏合 均可一键跳过直接开战`
+              ? desc.guideSkipArmed
+                ? `再点一次手机盲操板 / 右手捏合 或注视 ${dwellBadge} 即可确认跳过教学直接开战`
+                : desc.guideDone
+                  ? `动图教学已完成 · 注视 ${dwellBadge} / 轻点手机盲操板 / 右手捏合 立即拔刀开战`
+                  : `请先看完上方 4 项动作实时动图演示 · 如需提前跳过请轻点两次手机盲操板确认`
               : gazeDwellMs > 0
                 ? `注视此牌 ${dwellBadge} 自动开战 · 不看屏轻点盲操板亦可立即开战`
                 : `${handTracking ? '右手隔空捏合' : '轻点盲操板'}立即拔刀开战`;
+          const customBadge = desc.goldPrimary
+            ? desc.guideSkipArmed
+              ? '确认'
+              : desc.guideDone
+                ? '开战'
+                : `${Math.min(99, Math.floor((guideWatchedSec / Math.max(1, guideRequiredSec)) * 100))}%`
+            : dwellBadge;
           renderMenuSlot(desc.slot, {
             menuId: desc.id,
             secondary: desc.secondary,
             goldPrimary: Boolean(desc.goldPrimary),
             ready: assetsReady || desc.secondary || Boolean(desc.goldPrimary),
             hovered,
-            progress: hovered ? menuProgress : 0,
-            dwellBadge,
+            progress:
+              hovered && (!desc.goldPrimary || desc.guideDone || desc.guideSkipArmed)
+                ? menuProgress
+                : desc.goldPrimary && !desc.guideDone && !desc.guideSkipArmed
+                  ? Math.min(0.99, guideWatchedSec / Math.max(1, guideRequiredSec))
+                  : 0,
+            dwellBadge: customBadge,
             title: !assetsReady && !desc.secondary && !desc.goldPrimary ? '正在唤醒炭治郎与藤花结界…' : desc.title,
-            sub: hovered ? confirmHint : idleHint,
+            sub: hovered && (!desc.goldPrimary || desc.guideDone || desc.guideSkipArmed) ? confirmHint : idleHint,
           });
           desc.slot.cardMesh.scale.setScalar(hovered ? 1.035 : 1.0);
         }
@@ -1018,12 +1312,16 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             badge: xrSessionActive ? inputTag : 'AR 眼镜待命',
             difficulty,
             handTracking,
+            watchedSec: guideWatchedSec,
+            requiredSec: guideRequiredSec,
+            skipArmed: guideSkipArmed,
+            nowSec,
           });
         } else if (mode === 'battle') {
           const handStatus = handActive
             ? '🖐️ 手势中 · 📱 点斩/快滑闪全时可用'
             : handTracking
-              ? '🖐️ 连挥水车·出拳刺·竖掌盾·握拳3s'
+              ? '🖐️ 抬手滑水车·出拳刺·竖掌盾·抬手握拳2s'
               : '📱 点斩 · 快滑左右闪 · 双指盾';
           renderCompactBattleStrip({
             hp: Math.round(battle.hp),
@@ -1058,7 +1356,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
                 ? `当前试炼：${difficulty === 'hashira' ? '柱合试炼（高烈度）' : '夜巡标准'} · 平视下方按钮或轻点手机开战`
                 : `本局击破 ${battle.kills} · 弹反/破招 ${battle.perfect} · 水车合击 ${battle.musouCount}`,
             footer: handTracking
-              ? '右手：连挥水车 · 出拳/指突刺 · 竖掌✋架盾 · 握拳3s大招 ｜ 盲操板全时点斩/快滑闪避/走位'
+              ? '右手：抬手前左右滑水车 · 出拳突刺 · 竖掌✋架盾 · 抬手握拳2s大招 ｜ 盲操板全时点斩/快滑闪避/走位'
               : '全时盲操：轻点挥斩 · 左右快滑闪避 · 双指按住架盾 · 按住>0.2s平滑走位（免晃动手机）',
           });
         }
@@ -1113,7 +1411,7 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
             subLine: targetHazard
               ? `【危 ${targetHazard.remaining.toFixed(1)}s】竖掌✋/双指架盾 · 快滑闪避 · 出拳破招！`
               : gazeOnTarget
-                ? '视线已锁 · 连挥水车 / 出拳突刺 / 竖掌盾 / 握拳3s大招'
+                ? '视线已锁 · 抬手滑水车 / 出拳突刺 / 竖掌盾 / 抬手握拳2s大招'
                 : '粘性保持（看别处恶鬼即换锁）',
           });
         }
@@ -1151,14 +1449,16 @@ export function createWorldPlaque(worldRoot, { isGlasses = false } = {}) {
         skillBannerMesh.visible = false;
       }
 
-      // Update World-Space 3D Reticle + 3s Fist Charge Ring + Off-FOV Chevrons (◀ / ▶)
+      // Update World-Space 3D Reticle + Enlarged 2s Fist Charge Ring + Off-FOV Chevrons (◀ / ▶)
       currentUltChargeProgress = mode === 'battle' ? Math.max(0, Math.min(1, Number(ultChargeProgress) || 0)) : 0;
       if (currentUltChargeProgress > 0.005) {
         reticleGroup.visible = true;
         ultChargeMesh.visible = true;
+        ultChargeMesh.scale.setScalar(1.0 + currentUltChargeProgress * 0.18);
         renderUltChargeRing(currentUltChargeProgress);
       } else {
         ultChargeMesh.visible = false;
+        ultChargeMesh.scale.setScalar(1.0);
         reticleGroup.visible = isGlasses;
       }
 

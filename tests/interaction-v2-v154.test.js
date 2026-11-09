@@ -75,9 +75,9 @@ function installBridgeV154Environment(search = '?xr=glasses') {
   return win;
 }
 
-test('MetaTourWebAR v1.5.4 full contract: diagnostics green, onboarding skip, all-time blind-pad, dodge dedup, zero walk crosstalk', () => {
+test('MetaTourWebAR v1.5.6 full contract: diagnostics green, onboarding skip, all-time blind-pad, dodge dedup, zero walk crosstalk', () => {
   const win = installBridgeV154Environment('?xr=glasses');
-  assert.equal(win.MetaTourWebAR.version, '1.5.4');
+  assert.equal(win.MetaTourWebAR.version, '1.5.6');
   win.MetaTourWebAR.simulateInput({ kind: 'profile', profile: 'glasses-6dof' });
 
   const battle = createBattle({ isGlasses: true });
@@ -211,13 +211,13 @@ test('S24 right-hand v2.0 gestures: palm-hold/release sustained guard and 3-seco
   assert.equal(chargeSnapshots.at(-1)?.canceled, true);
   assert.equal(battle.musouCount, 0);
 
-  // 3. Full 3.0s steady fist -> fist-ult unleashes full cinematic musou ultimate even from energy=28:
+  // 3. Full 2.0s steady raised fist -> fist-ult unleashes full cinematic musou ultimate even from energy=28:
   win.MetaTourWebAR.simulateInput({ kind: 'hand-gesture', type: 'fist-charge', speed: 0.92 });
   assert.equal(Math.round(bridge.stats().ultChargeProgress * 100), 92);
   win.MetaTourWebAR.simulateInput({ kind: 'hand-gesture', type: 'fist-ult' });
   assert.equal(bridge.stats().ultChargeProgress, 0);
   assert.equal(chargeSnapshots.at(-1)?.completed, true);
-  assert.equal(battle.musouCount, 1, '3-second fist-ult must unleash full musou ultimate');
+  assert.equal(battle.musouCount, 1, '2-second fist-ult must unleash full musou ultimate');
   assert.ok(battle.musouTime >= 0, 'musou cinematic sequence started');
 });
 
